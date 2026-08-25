@@ -995,12 +995,21 @@ class AutoReplyService:
 
             # 构建通知内容
             account_desc = f"{self.cookie_id}({remark})" if remark else self.cookie_id
+            item_title = "未知"
+            if item_id:
+                try:
+                    item_info = db_manager.get_item_info(self.cookie_id, item_id)
+                    if item_info:
+                        item_title = item_info.get("item_title") or item_info.get("title") or "未知"
+                except Exception as e:
+                    logger.warning(f"获取商品名称失败: {e}")
             notification_content = f"【闲鱼消息】\n"
             notification_content += f"闲鱼账号: {account_desc}\n"
             notification_content += f"发送者: {send_user_name}\n"
             notification_content += f"消息: {send_message}\n"
             if item_id:
                 notification_content += f"商品ID: {item_id}\n"
+                notification_content += f"商品名称: {item_title}\n"
             notification_content += f"时间: {msg_time}"
             template_context = {
                 "account": account_desc,
@@ -1010,6 +1019,7 @@ class AutoReplyService:
                 "buyer_id": send_user_id or "未知",
                 "message": send_message or "",
                 "item_id": item_id or "未知",
+                "item_title": item_title,
                 "chat_id": chat_id or "未知",
                 "time": msg_time or time.strftime('%Y-%m-%d %H:%M:%S'),
             }

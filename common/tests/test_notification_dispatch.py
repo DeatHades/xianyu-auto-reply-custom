@@ -54,7 +54,7 @@ class NotificationDispatchTest(unittest.IsolatedAsyncioTestCase):
                     "channel_type": "bark",
                     "channel_config": {
                         "device_key": "a",
-                        "delivery_template": "{{buyer_nick}}|{{amount}}|{{quantity}}|{{result}}",
+                        "delivery_template": "{{buyer_nick}}|{{item_title}}|{{amount}}|{{quantity}}|{{result}}",
                     },
                 }
             ],
@@ -64,6 +64,9 @@ class NotificationDispatchTest(unittest.IsolatedAsyncioTestCase):
         ), patch(
             "common.db.compat.db_manager.get_order_by_id",
             return_value={"buyer_fish_nick": "金鱼小姐21", "amount": "2", "quantity": 1},
+        ), patch(
+            "common.db.compat.db_manager.get_item_info",
+            return_value={"item_title": "会员月卡"},
         ), patch(
             "app.services.xianyu.notification_manager.send_bark_notification",
             new=AsyncMock(return_value=True),
@@ -77,7 +80,7 @@ class NotificationDispatchTest(unittest.IsolatedAsyncioTestCase):
                 order_id="order-1",
             )
 
-        self.assertEqual(bark_send.await_args.args[1], "金鱼小姐21|¥2.00|1|发货成功")
+        self.assertEqual(bark_send.await_args.args[1], "金鱼小姐21|会员月卡|¥2.00|1|发货成功")
 
     async def test_delivery_default_keeps_original_layout_and_adds_amount_and_quantity(self):
         manager = NotificationManager("seller")

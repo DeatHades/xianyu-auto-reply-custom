@@ -123,6 +123,7 @@ const templateVariables: Record<NotificationTemplateType, Array<{ name: string; 
     { name: 'buyer_id', label: '买家 ID' },
     { name: 'message', label: '消息内容' },
     { name: 'item_id', label: '商品 ID' },
+    { name: 'item_title', label: '商品名称' },
     { name: 'chat_id', label: '聊天 ID' },
     { name: 'time', label: '通知时间' },
   ],
@@ -134,6 +135,7 @@ const templateVariables: Record<NotificationTemplateType, Array<{ name: string; 
     { name: 'buyer_id', label: '买家 ID' },
     { name: 'message', label: '消息内容' },
     { name: 'item_id', label: '商品 ID' },
+    { name: 'item_title', label: '商品名称' },
     { name: 'chat_id', label: '聊天 ID' },
     { name: 'time', label: '通知时间' },
     { name: 'order_id', label: '订单 ID' },
@@ -161,6 +163,7 @@ const defaultTemplates: Record<NotificationTemplateType, string> = {
 发送者: {{buyer_nick}}
 消息: {{message}}
 商品ID: {{item_id}}
+商品名称: {{item_title}}
 时间: {{time}}`,
   delivery: `🚨 自动发货通知
 
@@ -169,6 +172,7 @@ const defaultTemplates: Record<NotificationTemplateType, string> = {
 订单金额: {{amount}}
 购买数量: {{quantity}}
 商品ID: {{item_id}}
+商品名称: {{item_title}}
 聊天ID: {{chat_id}}
 结果: {{result}}
 时间: {{time}}

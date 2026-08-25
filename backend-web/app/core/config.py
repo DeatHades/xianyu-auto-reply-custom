@@ -95,7 +95,7 @@ class BackendWebConfig(BaseConfig):
 
     # 是否启用远程官方广告合并展示（官方服务器自身部署时可设为 False，避免重复展示自己的广告）
     enable_remote_ads: bool = Field(
-        default=True,
+        default=False,
         alias="ENABLE_REMOTE_ADS",
     )
 

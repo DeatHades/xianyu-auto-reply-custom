@@ -59,6 +59,21 @@ class NotificationManager:
         """安全地将异常转换为字符串（委托公共实现）"""
         return safe_str(e)
 
+    def _get_item_title(self, item_id: str | None) -> str:
+        """从本地商品目录读取商品名称，查询失败时不影响通知发送。"""
+        if not item_id:
+            return "未知"
+
+        try:
+            from common.db.compat import db_manager
+
+            item_info = db_manager.get_item_info(self.cookie_id, item_id)
+            if item_info:
+                return item_info.get("item_title") or item_info.get("title") or "未知"
+        except Exception as e:
+            logger.warning(f"读取商品名称失败: {self._safe_str(e)}")
+        return "未知"
+
     async def send_notification(self, send_user_name: str, send_user_id: str, 
                                send_message: str, item_id: str = None, chat_id: str = None):
         """发送消息通知"""
@@ -124,10 +139,12 @@ class NotificationManager:
 
             # 构建通知内容（与旧框架保持一致）
             account_desc = f"{self.cookie_id}({remark})" if remark else self.cookie_id
+            item_title = self._get_item_title(item_id)
             notification_msg = f"🚨 接收消息通知\n\n" \
                              f"闲鱼账号: {account_desc}\n" \
                              f"买家: {send_user_name} (ID: {send_user_id})\n" \
                              f"商品ID: {item_id or '未知'}\n" \
+                             f"商品名称: {item_title}\n" \
                              f"聊天ID: {chat_id or '未知'}\n" \
                              f"消息内容: {send_message}\n" \
                              f"时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
@@ -145,6 +162,7 @@ class NotificationManager:
                     "buyer_id": send_user_id or "未知",
                     "message": send_message or "",
                     "item_id": item_id or "未知",
+                    "item_title": item_title,
                     "chat_id": chat_id or "未知",
                     "time": time.strftime('%Y-%m-%d %H:%M:%S'),
                 },
@@ -213,12 +231,14 @@ class NotificationManager:
 
             # 构建通知内容
             account_desc = f"{self.cookie_id}({remark})" if remark else self.cookie_id
+            item_title = self._get_item_title(item_id)
             notification_message = f"🚨 自动发货通知\n\n" \
                                  f"闲鱼账号: {account_desc}\n" \
                                  f"买家: {buyer_nick} (ID: {send_user_id or '未知'})\n" \
                                  f"订单金额: {amount}\n" \
                                  f"购买数量: {quantity}\n" \
                                  f"商品ID: {item_id or '未知'}\n" \
+                                 f"商品名称: {item_title}\n" \
                                  f"聊天ID: {chat_id or '未知'}\n" \
                                  f"结果: {error_message}\n" \
                                  f"时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n" \
@@ -237,6 +257,7 @@ class NotificationManager:
                     "buyer_id": send_user_id or "未知",
                     "message": "",
                     "item_id": item_id or "未知",
+                    "item_title": item_title,
                     "chat_id": chat_id or "未知",
                     "time": time.strftime('%Y-%m-%d %H:%M:%S'),
                     "order_id": order_id or "未知",

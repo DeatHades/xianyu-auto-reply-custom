@@ -67,6 +67,10 @@ class NotificationTemplateTest(unittest.TestCase):
             "不支持的占位符: result",
         )
 
+    def test_item_title_is_available_to_chat_and_delivery_templates(self):
+        for template_type in ("chat", "delivery"):
+            self.assertIsNone(validate_notification_template("{{item_title}}", template_type))
+
 
 if __name__ == "__main__":
     unittest.main()

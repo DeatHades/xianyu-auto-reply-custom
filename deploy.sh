@@ -120,7 +120,7 @@ AUTO_START_CRAWL_JOBS=true
 # 远程官方服务基址（仪表盘广告、系统公告 = 本地内容 + 远程官方内容）
 REMOTE_OFFICIAL_BASE_URL=https://xy.zhinianboke.com
 # 是否启用远程官方广告合并展示（官方服务器自身部署建议设为 false）
-ENABLE_REMOTE_ADS=true
+ENABLE_REMOTE_ADS=false
 # 是否启用远程官方公告合并展示（官方服务器自身部署建议设为 false）
 ENABLE_REMOTE_ANNOUNCEMENTS=true
 # 是否启用远程官方弹窗公告合并展示（官方服务器自身部署建议设为 false）
@@ -228,7 +228,7 @@ services:
       - FRONTEND_PUBLIC_URL=${FRONTEND_PUBLIC_URL:-}
       - AUTO_START_CRAWL_JOBS=${AUTO_START_CRAWL_JOBS:-true}
       - REMOTE_OFFICIAL_BASE_URL=${REMOTE_OFFICIAL_BASE_URL:-https://xy.zhinianboke.com}
-      - ENABLE_REMOTE_ADS=${ENABLE_REMOTE_ADS:-true}
+      - ENABLE_REMOTE_ADS=${ENABLE_REMOTE_ADS:-false}
       - ENABLE_REMOTE_ANNOUNCEMENTS=${ENABLE_REMOTE_ANNOUNCEMENTS:-true}
       - ENABLE_REMOTE_POPUP_ANNOUNCEMENTS=${ENABLE_REMOTE_POPUP_ANNOUNCEMENTS:-true}
       - BROWSER_HEADLESS=true
