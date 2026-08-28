@@ -37,6 +37,29 @@ _API_MAX_RETRIES = 4
 _API_DEFAULT_TIMEOUT = 10
 
 
+def get_api_fallback_content(api_config: Any) -> Optional[str]:
+    """读取 API 卡券在接口失败后的默认发货文字。
+
+    该内容和 API 配置一起保存在 ``api_config`` 中，不增加数据库字段；未配置时
+    保持原有行为，由调用方按 API 取卡失败处理。
+    """
+    if not api_config:
+        return None
+
+    try:
+        if isinstance(api_config, str):
+            api_config = json.loads(api_config)
+        if not isinstance(api_config, dict):
+            return None
+
+        fallback_content = api_config.get("fallback_content")
+        if not isinstance(fallback_content, str):
+            return None
+        return fallback_content.strip() or None
+    except (TypeError, json.JSONDecodeError):
+        return None
+
+
 async def consume_batch_data(session: AsyncSession, card_id: int) -> Optional[str]:
     """消费批量数据卡券的一条数据（行锁，防止并发重复派发）
 
@@ -228,8 +251,11 @@ async def build_delivery_content(
     elif card_type == 'api':
         text_content = await get_api_card_content(card.api_config, context)
         if text_content is None:
-            logger.warning(f"卡券 {card.id} API 获取内容失败，提货失败")
-            return None
+            text_content = get_api_fallback_content(card.api_config)
+            if text_content is None:
+                logger.warning(f"卡券 {card.id} API 获取内容失败，提货失败")
+                return None
+            logger.warning(f"卡券 {card.id} API 获取内容失败，使用默认发货文字")
     elif card_type == 'image':
         # 图片类型本身无文字内容，下方统一处理图片URL拼接
         text_content = None

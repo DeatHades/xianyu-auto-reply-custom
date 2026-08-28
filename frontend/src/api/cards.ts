@@ -28,6 +28,8 @@ export interface CardData {
     headers?: string
     params?: string
     response_field?: string
+    /** API 调用失败时发送的默认文字 */
+    fallback_content?: string
   }
   text_content?: string
   data_content?: string

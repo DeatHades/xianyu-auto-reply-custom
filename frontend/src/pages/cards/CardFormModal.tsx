@@ -49,6 +49,7 @@ interface CardFormData {
   apiHeaders: string
   apiParams: string
   apiResponseField: string
+  apiFallbackContent: string
   textContent: string
   dataContent: string
   imageUrls: string[]
@@ -92,6 +93,7 @@ export function cardToFormData(card: CardData): CardFormData {
     apiHeaders: card.api_config?.headers || '',
     apiParams: card.api_config?.params || '',
     apiResponseField: card.api_config?.response_field || '',
+    apiFallbackContent: card.api_config?.fallback_content || '',
     textContent: card.text_content || '',
     dataContent: card.data_content || '',
     imageUrls: imageUrlsList,
@@ -125,6 +127,7 @@ export const emptyCardFormData: CardFormData = {
   apiHeaders: '',
   apiParams: '',
   apiResponseField: '',
+  apiFallbackContent: '',
   textContent: '',
   dataContent: '',
   imageUrls: [],
@@ -297,6 +300,7 @@ export function CardFormModal({ cardId, initialData, onClose, onSaved }: CardFor
           headers: formData.apiHeaders.trim() || undefined,
           params: formData.apiParams.trim() || undefined,
           response_field: formData.apiResponseField.trim() || undefined,
+          fallback_content: formData.apiFallbackContent.trim() || undefined,
         }
       } else if (formData.type === 'text') {
         cardData.text_content = formData.textContent.trim()
@@ -453,6 +457,18 @@ export function CardFormModal({ cardId, initialData, onClose, onSaved }: CardFor
                       注意：接口返回纯文本时若填写本字段，会因无法解析而取值失败，请务必留空。
                     </p>
                   </div>
+                </div>
+                <div>
+                  <label className="input-label">接口失败默认发货文字（选填）</label>
+                  <textarea
+                    value={formData.apiFallbackContent}
+                    onChange={(e) => updateField('apiFallbackContent', e.target.value)}
+                    className="input-ios h-24"
+                    placeholder="接口多次调用失败时，自动发送这段文字给买家"
+                  />
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                    仅在接口请求或重试失败后使用；留空则保持原来的失败处理，不会自动发送内容。
+                  </p>
                 </div>
               </div>
             )}

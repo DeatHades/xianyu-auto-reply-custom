@@ -25,6 +25,7 @@ from app.services.xianyu.delivery_utils import (
 )
 from app.services.xianyu.yifan_api_handler import YifanApiHandler
 from common.db.compat import db_manager
+from common.services.card_delivery_content import get_api_fallback_content
 from common.services.order_service import OrderDetailService
 from common.utils.fish_nick_utils import get_buyer_fish_nick
 from common.utils.response_field import extract_card_api_response_content
@@ -2341,9 +2342,17 @@ class AutoDeliveryHandler:
                     # API类型：调用API获取内容，传入订单和商品信息用于动态参数替换
                     text_content = await self._get_api_card_content(rule, order_id, item_id, send_user_id, spec_name, spec_value, chat_id=chat_id, send_user_name=send_user_name)
                     if text_content is None:
-                        self._last_delivery_fail_reason = f"获取API卡券内容失败: 卡券ID={rule['card_id']}, 名称={rule['card_name']}"
-                        logger.warning(self._last_delivery_fail_reason)
-                        return None
+                        text_content = get_api_fallback_content(
+                            rule.get('api_config') or rule.get('card_api_config')
+                        )
+                        if text_content is None:
+                            self._last_delivery_fail_reason = f"获取API卡券内容失败: 卡券ID={rule['card_id']}, 名称={rule['card_name']}"
+                            logger.warning(self._last_delivery_fail_reason)
+                            return None
+                        logger.warning(
+                            f"API卡券获取失败，使用默认发货文字: "
+                            f"卡券ID={rule['card_id']}, 名称={rule['card_name']}"
+                        )
 
                 elif rule['card_type'] == 'yifan_api':
                     # 亦凡卡劵API类型：调用亦凡API获取内容

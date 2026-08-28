@@ -110,6 +110,9 @@ export function CardDetailModal({ card, onClose, zIndex = 60 }: CardDetailModalP
               {card.api_config.response_field && (
                 <DetailRow label="响应取值字段" value={card.api_config.response_field} />
               )}
+              {card.api_config.fallback_content && (
+                <DetailRow label="接口失败默认文字" value={card.api_config.fallback_content} multiline />
+              )}
             </div>
           )}
 
