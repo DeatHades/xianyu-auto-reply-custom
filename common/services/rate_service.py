@@ -27,15 +27,17 @@ class RateService:
     支持令牌过期自动刷新Cookie并重试
     """
     
-    def __init__(self, cookie_string: str, account_id: str = None):
+    def __init__(self, cookie_string: str, account_id: str = None, proxy_url: str | None = None):
         """初始化评价服务
         
         Args:
             cookie_string: 账号Cookie字符串
             account_id: 账号ID，用于令牌过期时更新数据库Cookie（可选）
+            proxy_url: 账号启用代理时的代理地址；传入后绝不直连回退
         """
         self.cookie_string = cookie_string
         self.account_id = account_id
+        self.proxy_url = proxy_url
         self.cookies_dict = self._parse_cookies(cookie_string)
     
     def _parse_cookies(self, cookies_str: str) -> dict:
@@ -109,9 +111,17 @@ class RateService:
             
             url = "https://h5api.m.goofish.com/h5/mtop.taobao.idle.rate.create/4.0/"
             
+            from common.utils.account_proxy import build_aiohttp_proxy_options
+
             timeout = aiohttp.ClientTimeout(total=20)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(url, params=params, headers=headers, data={"data": data_val}) as response:
+            connector, request_proxy = build_aiohttp_proxy_options(self.proxy_url)
+            session_kwargs: dict[str, Any] = {"timeout": timeout}
+            if connector is not None:
+                session_kwargs["connector"] = connector
+            async with aiohttp.ClientSession(**session_kwargs) as session:
+                async with session.post(
+                    url, params=params, headers=headers, data={"data": data_val}, proxy=request_proxy
+                ) as response:
                     result = await response.json()
                     
                     ret = result.get('ret', [])
@@ -152,7 +162,12 @@ class RateService:
                         )
                         if self.account_id:
                             mark_account_session_expired(self.account_id)
-                            trigger_password_login_async(self.account_id)
+                            if self.proxy_url:
+                                logger.warning(
+                                    f"账号 {self.account_id} 已配置代理，已阻止直连密码登录"
+                                )
+                            else:
+                                trigger_password_login_async(self.account_id)
                     
                     logger.warning(
                         f"账号 {self.account_id or '未知账号'} {retry_tag}评价失败: "

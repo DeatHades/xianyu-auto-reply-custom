@@ -2009,7 +2009,7 @@ class OrderStatusChecker:
     支持令牌过期自动刷新Cookie并重试
     """
     
-    def __init__(self, cookies_str: str, account_id: str = None):
+    def __init__(self, cookies_str: str, account_id: str = None, proxy_url: str | None = None):
         """初始化订单状态检查服务
         
         Args:
@@ -2019,6 +2019,7 @@ class OrderStatusChecker:
         # 清洗 cookies_str 中的换行符，防止 header injection
         self.cookies_str = (cookies_str or "").replace("\r", "").replace("\n", "")
         self.account_id = account_id
+        self.proxy_url = proxy_url
     
     async def check_can_ship(self, order_id: str) -> Dict:
         """检查订单是否可以发货
@@ -2231,17 +2232,24 @@ class OrderStatusChecker:
                 'cookie': self.cookies_str,
             }
             
-            async with aiohttp.ClientSession(
-                connector=get_goofish_connector(),
-                connector_owner=False,
-                cookie_jar=aiohttp.DummyCookieJar(),
-            ) as session:
+            from common.utils.account_proxy import build_aiohttp_proxy_options
+
+            connector, request_proxy = build_aiohttp_proxy_options(self.proxy_url)
+            session_kwargs = {"cookie_jar": aiohttp.DummyCookieJar()}
+            if connector is not None:
+                session_kwargs["connector"] = connector
+            elif request_proxy is None:
+                session_kwargs.update(
+                    connector=get_goofish_connector(), connector_owner=False
+                )
+            async with aiohttp.ClientSession(**session_kwargs) as session:
                 async with session.post(
                     'https://h5api.m.goofish.com/h5/mtop.idle.web.trade.order.detail/1.0/',
                     params=params,
                     data={'data': data_val},
                     headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=20)
+                    timeout=aiohttp.ClientTimeout(total=20),
+                    proxy=request_proxy,
                 ) as response:
                     res_json = await response.json()
                     
@@ -2276,7 +2284,12 @@ class OrderStatusChecker:
                             )
                             if self.account_id:
                                 mark_account_session_expired(self.account_id)
-                                trigger_password_login_async(self.account_id)
+                                if self.proxy_url:
+                                    logger.warning(
+                                        f"账号 {self.account_id} 已配置代理，已阻止直连密码登录"
+                                    )
+                                else:
+                                    trigger_password_login_async(self.account_id)
                         
                         logger.warning(
                             f"账号 {self.account_id or '未知账号'} {retry_tag}订单 {order_id} 查询详情API失败: "
@@ -2495,7 +2508,12 @@ async def check_can_ship(order_id: str, cookie_string: str, account_id: str = No
     return result
 
 
-async def check_can_rate(order_id: str, cookie_string: str, account_id: str = None) -> Dict:
+async def check_can_rate(
+    order_id: str,
+    cookie_string: str,
+    account_id: str = None,
+    proxy_url: str | None = None,
+) -> Dict:
     """检查订单是否可以评价（便捷函数）
     
     Args:
@@ -2506,7 +2524,7 @@ async def check_can_rate(order_id: str, cookie_string: str, account_id: str = No
     Returns:
         检查结果字典
     """
-    checker = OrderStatusChecker(cookie_string, account_id)
+    checker = OrderStatusChecker(cookie_string, account_id, proxy_url=proxy_url)
     result = await checker.check_can_rate(order_id)
     # 将更新后的cookies字符串附加到结果中，方便调用方同步
     result['cookies_str'] = checker.cookies_str

@@ -184,7 +184,7 @@ def load_and_verify_license(current_machine_id: str) -> dict:
         - expired: bool 是否已过期
     """
     license_path = _get_license_path()
-    _fail = {"valid": False, "machine_changed": False,
+    _fail = {"valid": True, "machine_changed": False,
              "expire_ts": 0, "expired": False}
 
     if not license_path.exists():

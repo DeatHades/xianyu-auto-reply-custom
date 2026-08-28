@@ -24,6 +24,7 @@ from common.db.session import async_session_maker
 from common.models.xy_account import XYAccount
 from common.models.xy_order import XYOrder
 from common.models.scheduled_rate_log import ScheduledRateLog
+from common.utils.account_proxy import AccountProxyConfigurationError, build_account_proxy_url
 from common.utils.time_utils import get_beijing_now_naive
 
 
@@ -344,6 +345,19 @@ class RateTask:
         account_id = account.account_id
         cookie_string = cookie_str or account.cookie
         item_id = order.item_id
+
+        try:
+            proxy_url = build_account_proxy_url(
+                account.proxy_type,
+                account.proxy_host,
+                account.proxy_port,
+                account.proxy_user,
+                account.proxy_pass,
+            )
+        except AccountProxyConfigurationError as exc:
+            # 代理账号必须 fail-closed：配置异常时不执行任何携带 Cookie 的闲鱼请求。
+            logger.warning(f"[定时补评价] 账号 {account_id} 代理不可用，跳过本次评价: {exc}")
+            return False, f"代理不可用，已阻止直连评价: {exc}", cookie_string
         
         logger.debug(f"[定时补评价] 开始处理订单: {order_no}，商品ID: {item_id}，当前状态: {order.status}")
         
@@ -357,7 +371,9 @@ class RateTask:
         
         # 调用check_can_rate检查订单是否可以评价（传入account_id支持令牌过期自动刷新Cookie）
         from common.services.order_service import check_can_rate
-        check_result = await check_can_rate(order_no, cookie_string, account_id=account_id)
+        check_result = await check_can_rate(
+            order_no, cookie_string, account_id=account_id, proxy_url=proxy_url
+        )
         
         # 如果Cookie被刷新了，同步更新本地变量
         if check_result.get('cookies_str') and check_result['cookies_str'] != cookie_string:
@@ -395,7 +411,7 @@ class RateTask:
         try:
             from common.services.rate_service import RateService, update_order_rated_status
             
-            rate_service = RateService(cookie_string, account_id=account_id)
+            rate_service = RateService(cookie_string, account_id=account_id, proxy_url=proxy_url)
             result = await rate_service.rate_buyer(order_no, feedback=feedback)
             
             if result.get('success'):
