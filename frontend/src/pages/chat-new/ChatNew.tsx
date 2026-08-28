@@ -86,6 +86,7 @@ export function ChatNew() {
   // 发送消息
   const [inputText, setInputText] = useState('')
   const [sending, setSending] = useState(false)
+  const messageInputRef = useRef<HTMLTextAreaElement>(null)
   // 发送图片：隐藏的文件选择框引用
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [pendingImage, setPendingImage] = useState<{ file: File; previewUrl: string } | null>(null)
@@ -150,6 +151,14 @@ export function ChatNew() {
   const activeCidRef = useRef(activeCid)
   useEffect(() => { activeCidRef.current = activeCid }, [activeCid])
   const reloadOrdersRef = useRef<() => void>(() => {})
+
+  // 发送时输入框会被禁用以防止重复提交，浏览器会因此移走焦点。
+  // 状态恢复后再聚焦，保证回车连续发送和点击发送都有一致体验。
+  useEffect(() => {
+    if (sending || !activeCid) return
+    const frameId = requestAnimationFrame(() => messageInputRef.current?.focus())
+    return () => cancelAnimationFrame(frameId)
+  }, [sending, activeCid])
 
   // ==================== 按账号缓存：切换账号时保留数据 ====================
   /** 每个账号的会话列表缓存 */
@@ -1455,6 +1464,7 @@ export function ChatNew() {
                 <ImagePlus className="w-4 h-4" />
               </button>
               <textarea
+                ref={messageInputRef}
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onPaste={handlePasteImage}
