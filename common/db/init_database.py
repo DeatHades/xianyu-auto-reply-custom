@@ -356,6 +356,13 @@ class DatabaseInitializer:
             "定时清理被禁用账号的浏览器数据",
         ),
         (
+            "cleanup_unconfigured_browser_data",
+            "清理未配置账号密码的浏览器数据任务",
+            10800,
+            False,
+            "定时清理未配置登录账号密码（username 或 login_password 为空）账号的浏览器数据",
+        ),
+        (
             "fetch_orders",
             "获取闲鱼订单任务",
             600,
@@ -671,6 +678,7 @@ class DatabaseInitializer:
                 description TEXT COMMENT '卡券描述',
                 enabled TINYINT(1) DEFAULT 1 COMMENT '是否启用',
                 delay_seconds INT DEFAULT 0 COMMENT '延迟秒数',
+                use_no_logistics_form TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否通过无需邮寄表单发货',
                 delivery_count INT DEFAULT 0 COMMENT '发货次数',
                 price VARCHAR(32) COMMENT '对接价格',
                 is_dockable TINYINT(1) DEFAULT 0 COMMENT '是否可对接',
@@ -1258,6 +1266,7 @@ class DatabaseInitializer:
                 order_no VARCHAR(64) NOT NULL COMMENT '充值订单号',
                 user_id BIGINT NOT NULL COMMENT '用户ID',
                 amount VARCHAR(32) NOT NULL COMMENT '充值金额',
+                order_type VARCHAR(20) NOT NULL DEFAULT 'recharge' COMMENT '订单类型：recharge-余额充值，ad-广告申请付款',
                 status VARCHAR(32) NOT NULL DEFAULT 'pending' COMMENT '订单状态：pending-待支付，paid-已支付，expired-已过期，failed-失败',
                 trade_no VARCHAR(128) DEFAULT NULL COMMENT '支付宝交易号',
                 qr_code VARCHAR(512) DEFAULT NULL COMMENT '支付二维码内容',
@@ -1915,6 +1924,9 @@ class DatabaseInitializer:
         "xy_scheduled_tasks": [
             ("run_start_time", "VARCHAR(5) NOT NULL DEFAULT '00:00' COMMENT '执行范围开始时间(HH:MM)'", "enabled"),
             ("run_end_time", "VARCHAR(5) NOT NULL DEFAULT '23:59' COMMENT '执行范围结束时间(HH:MM)'", "run_start_time"),
+       	],
+	"xy_recharge_orders": [
+            ("order_type", "VARCHAR(20) NOT NULL DEFAULT 'recharge' COMMENT '订单类型：recharge-余额充值，ad-广告申请付款'", "amount"),
         ],
         "xy_token_cache": [
             ("renew_expire_at", "DATETIME DEFAULT NULL COMMENT '续期Token过期时间'", "expire_at"),
@@ -2040,6 +2052,7 @@ class DatabaseInitializer:
         ],
         "xy_cards": [
             ("delivery_count", "INT DEFAULT 0 COMMENT '发货次数'", "delay_seconds"),
+            ("use_no_logistics_form", "TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否通过无需邮寄表单发货'", "delay_seconds"),
             ("price", "VARCHAR(32) COMMENT '对接价格'", "delivery_count"),
             ("is_dockable", "TINYINT(1) DEFAULT 0 COMMENT '是否可对接'", "price"),
             ("image_urls", "TEXT COMMENT '多图片URL列表(JSON数组，最多3张)'", "image_url"),
