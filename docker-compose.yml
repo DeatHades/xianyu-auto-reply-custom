@@ -24,7 +24,7 @@ services:
       - --max-allowed-packet=256M
       - --default-time-zone=+08:00
     volumes:
-      - mysql_data:/var/lib/mysql
+      - /vol1/docker/xianyu_auto_reply/mysql/data:/var/lib/mysql
     networks:
       - xianyu-network
     healthcheck:
@@ -48,7 +48,7 @@ services:
     environment:
       - TZ=Asia/Shanghai
     volumes:
-      - redis_data:/data
+      - /vol1/docker/xianyu_auto_reply/redis/data:/data
     networks:
       - xianyu-network
     healthcheck:
