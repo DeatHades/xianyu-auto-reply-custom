@@ -25,6 +25,8 @@ services:
       - --default-time-zone=+08:00
     volumes:
       - /vol1/docker/xianyu_auto_reply/mysql/data:/var/lib/mysql
+    ports:
+      - "3306:3306"
     networks:
       - xianyu-network
     healthcheck:
