@@ -14,6 +14,7 @@ from . import (
     admin,
     advertisements,
     ai,
+    ai_listing,
     announcements,
     auto_reply_logs,
     auth,
@@ -61,6 +62,8 @@ from . import (
     external_cookie,
     external_accounts,
     external_category,
+    external_message_logs,
+    external_orders,
     external_publish,
     proxy,
     refund_cancel,
@@ -109,6 +112,7 @@ api_router.include_router(cookies.router, prefix="/cookies", tags=["账号管理
 api_router.include_router(items.items_router, tags=["商品管理"])  # items.py已定义prefix="/items"
 api_router.include_router(orders.router, prefix="/orders", tags=["订单管理"])
 api_router.include_router(product_publish.router, tags=["商品发布"])  # 已定义prefix="/product-publish"
+api_router.include_router(ai_listing.router, tags=["AI铺货"])  # 已定义prefix="/ai-listing"
 api_router.include_router(product_publish_capability.router, tags=["商品发布账号能力"])
 api_router.include_router(publish_addresses.router, tags=["商品发布随机地址池"])  # 已定义prefix="/product-publish/addresses"
 api_router.include_router(personal_addresses.router, tags=["个人发布地址库"])  # 已定义prefix="/product-publish/personal-addresses"
@@ -119,6 +123,8 @@ api_router.include_router(order_fallback_account.router, tags=["兜底下单账�
 api_router.include_router(external_cookie.router, tags=["外部Cookie同步"])  # 已定义prefix="/external/account-cookie"
 api_router.include_router(external_accounts.router, tags=["公开账号查询"])  # 已定义prefix="/external/enabled-accounts"
 api_router.include_router(external_category.router, tags=["公开分类推荐"])  # 已定义prefix="/external/category"
+api_router.include_router(external_message_logs.router, tags=["公开消息日志"])  # 已定义prefix="/external/message-logs"
+api_router.include_router(external_orders.router, tags=["公开订单查询"])  # 已定义prefix="/external/orders"
 api_router.include_router(external_publish.router, tags=["公开商品发布"])  # 已定义prefix="/external/publish"
 api_router.include_router(keywords.router, prefix="/keywords-with-item-id", tags=["关键词管理"])
 api_router.include_router(cards.router, prefix="/cards", tags=["卡券管理"])
