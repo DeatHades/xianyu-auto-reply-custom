@@ -464,6 +464,17 @@ export function ProductMaterials() {
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteConfirm({ open: false, item: null })}
       />
+      {/* 批量删除确认弹窗 */}
+      <ConfirmModal
+        isOpen={batchDeleteConfirm}
+        title="确认批量移出"
+        message={`确认将选中的 ${selectedIds.length} 条素材移出素材库吗？历史发布日志不会受影响。`}
+        confirmText={`移出 ${selectedIds.length} 条`}
+        type="danger"
+        loading={batchDeleting}
+        onConfirm={handleBatchDelete}
+        onCancel={() => setBatchDeleteConfirm(false)}
+      />
     </div>
   )
 }
