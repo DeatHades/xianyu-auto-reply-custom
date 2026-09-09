@@ -13,6 +13,7 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.models.product_material import ProductMaterial
+from app.services.xianyu_item_snapshot import as_bool
 
 
 # ==================== 素材库服务 ====================
@@ -100,6 +101,7 @@ class ProductMaterialService:
     async def create(self, user_id: int, data: dict) -> ProductMaterial:
         """创建素材"""
         data = _normalize_material_json(data)
+        shipping_method = str(data.get("shipping_method") or "free")
         material = ProductMaterial(
             user_id=user_id,
             title=data["title"],
@@ -122,9 +124,11 @@ class ProductMaterialService:
             specifications=data["specifications"],
             sku_rows=data["sku_rows"],
             quantity=int(data.get("quantity") or 1),
-            delivery_method=data.get("delivery_method", "express"),
-            shipping_method=data.get("shipping_method", "free"),
-            support_pickup=bool(data.get("support_pickup", False)),
+            # delivery_method 仅为兼容展示字段，实际发布由 shipping_method 决定。
+            delivery_method="pickup" if shipping_method == "none" else "express",
+            shipping_method=shipping_method,
+            # 兼容 API/历史调用可能传入的 "true"/"false" 字符串，避免 bool("false") 为 True。
+            support_pickup=as_bool(data.get("support_pickup", False)),
             postage=float(data.get("postage", 0)),
             address=data.get("address"),
             address_expected_text=data.get("address_expected_text"),
@@ -243,7 +247,13 @@ class ProductMaterialService:
                 value = data[field]
                 if field in ("price", "original_price", "postage"):
                     value = float(value) if value else (None if field == "original_price" else 0)
+                elif field == "support_pickup":
+                    # 兼容表单/历史调用传入的布尔字符串，避免 bool("false") 被当作 True。
+                    value = as_bool(value)
                 setattr(material, field, value)
+
+        # 防止历史调用只更新 delivery_method 造成与实际运费方式不一致。
+        material.delivery_method = "pickup" if material.shipping_method == "none" else "express"
 
         await self.session.commit()
         await self.session.refresh(material)
@@ -282,6 +292,7 @@ class ProductMaterialService:
 
 def _material_to_dict(m: ProductMaterial, auto_relist: dict | None = None) -> dict:
     """将素材模型转为字典"""
+    shipping_method = m.shipping_method or ("fixed" if m.postage else "free")
     return {
         "id": m.id,
         "user_id": m.user_id,
@@ -305,9 +316,10 @@ def _material_to_dict(m: ProductMaterial, auto_relist: dict | None = None) -> di
         "specifications": m.specifications or [],
         "sku_rows": m.sku_rows or [],
         "quantity": m.quantity or 1,
-        "delivery_method": m.delivery_method,
-        "shipping_method": m.shipping_method or ("fixed" if m.postage else "free"),
-        "support_pickup": bool(m.support_pickup),
+        # shipping_method 是实际发布依据；兼容历史记录中的旧/空 delivery_method。
+        "delivery_method": "pickup" if shipping_method == "none" else "express",
+        "shipping_method": shipping_method,
+        "support_pickup": as_bool(m.support_pickup),
         "postage": float(m.postage) if m.postage is not None else 0,
         "address": m.address,
         "address_expected_text": m.address_expected_text,

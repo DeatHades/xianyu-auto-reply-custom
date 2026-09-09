@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from common.services.account_cookie_service import merge_account_cookie_fields
@@ -36,8 +36,13 @@ from common.services.token_renewal_cache_service import (
 )
 from common.services.token_api_mode import load_token_api_mode
 from common.utils.xianyu_utils import trans_cookies
+from app.api.deps import require_internal_auth
 
-router = APIRouter(prefix="/internal", tags=["internal"])
+router = APIRouter(
+    prefix="/internal",
+    tags=["internal"],
+    dependencies=[Depends(require_internal_auth)],
+)
 
 
 class StartAccountRequest(BaseModel):

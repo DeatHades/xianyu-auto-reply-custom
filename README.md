@@ -352,6 +352,7 @@ npm run dev
 | `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` | MySQL 连接 |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` / `REDIS_DB` | Redis 连接 |
 | `JWT_SECRET_KEY` | JWT 密钥，由数据库统一托管（首次启动自动生成并持久化），无需手动配置 |
+| `INTERNAL_API_TOKEN` | 服务间 `/internal` API 共享令牌，可留空；首次启动自动生成并持久化到数据库 |
 | `BACKEND_WEB_PORT` / `WEBSOCKET_PORT` / `SCHEDULER_PORT` | 各服务端口 |
 | `WEBSOCKET_SERVICE_URL` / `SCHEDULER_SERVICE_URL` / `BACKEND_WEB_SERVICE_URL` | 服务间调用地址 |
 | `BACKEND_WEB_PUBLIC_URL` | 对外访问地址，用于生成文件 URL |
@@ -748,7 +749,10 @@ curl -X POST "http(s)://<服务域名或IP>:<端口>/api/v1/external/publish/med
 | `sku_rows` | object[] | 否 | `[]` | 最多 200 条 SKU |
 | `address` | string | 是 | - | 宝贝所在地，最长 200 个字符；需传外部系统已选择的地址关键词 |
 | `address_expected_text` | string | 否 | - | 地址预期展示文本，最长 200 个字符 |
-| `shipping_method` | string | 否 | `free` | 只能是 `free` 或 `none` |
+| `delivery_method` | string | 否 | `express` | `express` 快递或 `pickup` 自提 |
+| `shipping_method` | string | 否 | `free` | `free` 包邮、`distance` 按距离计费、`fixed` 一口价、`template` 运费模板、`none` 无需邮寄 |
+| `postage` | number | 否 | `0` | `shipping_method=fixed` 时的运费，0～1000 元 |
+| `support_pickup` | boolean | 否 | `false` | 是否支持自提；与 `shipping_method` 独立 |
 
 `platform_attributes` 每项可传：`property_id`（最长 64）、`property_name`（最长 100）、
 `value_id`（最长 64）、`value_name`（最长 200）、`text`（最长 200）、
@@ -785,7 +789,10 @@ curl -X POST "http(s)://<服务域名或IP>:<端口>/api/v1/external/publish/med
   "sku_rows": [],
   "address": "上海市",
   "address_expected_text": "上海",
-  "shipping_method": "free"
+  "delivery_method": "express",
+  "shipping_method": "free",
+  "postage": 0,
+  "support_pickup": false
 }
 ```
 
