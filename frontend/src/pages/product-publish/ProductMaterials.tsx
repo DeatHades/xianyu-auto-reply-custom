@@ -18,8 +18,8 @@ import { getMaterials, deleteMaterial, batchDeleteMaterials, type ProductMateria
 import { PageLoading } from '@/components/common/Loading'
 import { ConfirmModal } from '@/components/common/ConfirmModal'
 import { MaterialFormModal } from './MaterialFormModal'
-import { AutoRelistModal } from './AutoRelistModal'
 import { AiListingModal } from './ai-listing/AiListingModal'
+import { AutoRelistModal } from './AutoRelistModal'
 import { useAiListingTask } from './ai-listing/useAiListingTask'
 
 const CONDITIONS = ['全新', '99新', '95新', '9成新', '8成新', '7成新以下']
@@ -47,7 +47,6 @@ export function ProductMaterials() {
   const [totalPages, setTotalPages] = useState(0)
   const [showModal, setShowModal] = useState(false)
   const [editTarget, setEditTarget] = useState<ProductMaterial | null>(null)
-  const [autoRelistTarget, setAutoRelistTarget] = useState<ProductMaterial | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; item: ProductMaterial | null }>({ open: false, item: null })
   const [deleting, setDeleting] = useState(false)
 
@@ -64,6 +63,7 @@ export function ProductMaterials() {
 
   // AI 铺货
   const [showAiModal, setShowAiModal] = useState(false)
+  const [relistTarget, setRelistTarget] = useState<ProductMaterial | null>(null)
 
   /** 加载素材列表 */
   const load = async (p = page, size = pageSize) => {
@@ -305,8 +305,8 @@ export function ProductMaterials() {
                 <th>平台分类</th>
                 <th>成色</th>
                 <th>媒体</th>
-                <th>自动续售</th>
                 <th>创建时间</th>
+                <th>自动续售</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -353,23 +353,21 @@ export function ProductMaterials() {
                   </td>
                   <td><span className="badge-gray">{m.condition}</span></td>
                   <td><span className="badge-info">{(m.images || []).length} 图 / {(m.videos || []).length} 视频</span></td>
-                  <td className="whitespace-nowrap">
-                    {m.auto_relist?.enabled ? (
-                      <div>
-                        <span className={m.auto_relist.status === 'error' ? 'badge-danger' : 'badge-success'}>
-                          {m.auto_relist.status === 'error' ? '异常' : m.auto_relist.status === 'waiting' ? '等待续售' : m.auto_relist.status === 'retrying' ? '重试中' : '监听中'}
-                        </span>
-                        <span className="mt-1 block max-w-[120px] truncate text-xs text-slate-400" title={m.auto_relist.current_item_id}>{m.auto_relist.current_item_id}</span>
-                      </div>
-                    ) : <span className="badge-gray">未启用</span>}
-                  </td>
                   <td className="text-sm text-slate-500 whitespace-nowrap">
                     {m.created_at ? new Date(m.created_at).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '-'}
                   </td>
                   <td>
+                    <div className="flex items-center gap-1">
+                      <span className={`badge-${m.auto_relist?.status === 'active' ? 'success' : m.auto_relist ? 'warning' : 'gray'}`}>
+                        {m.auto_relist ? (m.auto_relist.status_text || m.auto_relist.status) : '未配置'}
+                      </span>
+                    </div>
+                  </td>
+                  <td>
                     <div className="table-actions">
-                      <button className="table-action-btn" title="配置自动续售" onClick={() => setAutoRelistTarget(m)}>
-                        <Repeat2 className={`w-4 h-4 ${m.auto_relist?.enabled ? 'text-emerald-500' : 'text-slate-400'}`} />
+                      <button className="table-action-btn" title={m.auto_relist_can_configure === false ? '管理员只读，查看自动续售' : '自动续售'}
+                        onClick={() => setRelistTarget(m)}>
+                        <Repeat2 className={`w-4 h-4 ${m.auto_relist_can_configure === false ? 'text-slate-300' : 'text-emerald-500'}`} />
                       </button>
                       <button className="table-action-btn" title="编辑"
                         onClick={() => { setEditTarget(m); setShowModal(true) }}>
@@ -425,24 +423,6 @@ export function ProductMaterials() {
         />
       )}
 
-      {/* 自动重发弹窗 */}
-      {autoRelistTarget && (
-        <AutoRelistModal
-          material={autoRelistTarget}
-          onClose={() => setAutoRelistTarget(null)}
-          onSaved={(rule) => {
-            setMaterials(current =>
-              current.map(item =>
-                item.id === autoRelistTarget.id
-                  ? { ...item, auto_relist: rule }
-                  : item
-              )
-            )
-            setAutoRelistTarget(null)
-          }}
-        />
-      )}
-
       {/* AI 铺货弹窗 */}
       {showAiModal && (
         <AiListingModal
@@ -450,6 +430,14 @@ export function ProductMaterials() {
           onStartTracking={aiTask.startTracking}
           onResetTask={aiTask.resetTask}
           onClose={() => setShowAiModal(false)}
+        />
+      )}
+
+      {relistTarget && (
+        <AutoRelistModal
+          material={relistTarget}
+          onClose={() => setRelistTarget(null)}
+          onSaved={() => { setRelistTarget(null); load(page, pageSize) }}
         />
       )}
 
@@ -464,6 +452,7 @@ export function ProductMaterials() {
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteConfirm({ open: false, item: null })}
       />
+
       {/* 批量删除确认弹窗 */}
       <ConfirmModal
         isOpen={batchDeleteConfirm}

@@ -67,6 +67,9 @@ from common.models.auto_relist_rule import AutoRelistRule
 from common.models.auto_relist_event import AutoRelistEvent
 from common.models.ai_listing_config import AiListingConfig
 from common.models.ai_listing_task import AiListingTask, AiListingTaskItem
+from common.models.auto_relist_rule import AutoRelistRule
+from common.models.auto_relist_event import AutoRelistEvent
+from common.models.relist_association_migration import RelistAssociationMigration
 
 
 __all__ = [
@@ -141,4 +144,7 @@ __all__ = [
     "AiListingConfig",
     "AiListingTask",
     "AiListingTaskItem",
+    "AutoRelistRule",
+    "AutoRelistEvent",
+    "RelistAssociationMigration",
 ]
