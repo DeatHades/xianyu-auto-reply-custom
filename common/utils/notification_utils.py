@@ -152,7 +152,11 @@ async def send_feishu_notification(config_data: Dict[str, Any], message: str) ->
 
 
 
-async def send_bark_notification(config_data: Dict[str, Any], message: str) -> bool:
+async def send_bark_notification(
+    config_data: Dict[str, Any],
+    message: str,
+    account_group: Optional[str] = None,
+) -> bool:
     """发送Bark通知"""
     try:
         server_url = config_data.get('server_url', 'https://api.day.app').rstrip('/')
@@ -160,7 +164,11 @@ async def send_bark_notification(config_data: Dict[str, Any], message: str) -> b
         title = config_data.get('title', '闲鱼自动回复通知')
         sound = config_data.get('sound', 'default')
         icon = config_data.get('icon', '')
-        group = config_data.get('group', 'xianyu')
+        configured_group = (config_data.get('group') or '').strip()
+        group_by_account = bool(config_data.get('group_by_account', True))
+        group = configured_group or (
+            account_group if group_by_account and account_group else 'xianyu'
+        )
         url = config_data.get('url', '')
 
         if not device_key:

@@ -37,10 +37,16 @@ const channelTypes = [
     label: 'Bark通知', 
     desc: 'iOS推送通知', 
     icon: Smartphone, 
-    placeholder: '{"device_key": "xxx", "server_url": "https://api.day.app"}',
+    placeholder: '{"device_key": "xxx", "server_url": "https://api.day.app", "group_by_account": true}',
     defaultConfig: {
       device_key: "你的设备密钥",
-      server_url: "https://api.day.app"
+      server_url: "https://api.day.app",
+      group_by_account: true,
+      group: "",
+      title: "闲鱼自动回复通知",
+      sound: "default",
+      icon: "",
+      url: ""
     }
   },
   { 
@@ -437,7 +443,7 @@ export function NotificationChannels() {
   // 获取当前类型的配置提示
   const getConfigHint = (type: ChannelType) => {
     switch (type) {
-      case 'bark': return 'Bark是iOS推送通知服务，需要填写设备密钥'
+      case 'bark': return 'Bark 是 iOS 推送通知服务；group_by_account=true 且 group 为空时，会按闲鱼账号自动分组。'
       case 'dingtalk': return '请设置钉钉机器人Webhook URL，可选填加签密钥'
       case 'feishu': return '请设置飞书机器人Webhook URL'
       case 'email': return '需要填写SMTP服务器、端口、发送邮箱、密码和接收邮箱'

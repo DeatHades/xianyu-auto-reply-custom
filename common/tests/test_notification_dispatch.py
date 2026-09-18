@@ -42,6 +42,7 @@ class NotificationDispatchTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(bark_send.await_args.args[1], "买家=小王")
+        self.assertEqual(bark_send.await_args.kwargs["account_group"], "闲鱼-seller")
         self.assertEqual(feishu_send.await_args.args[1], "消息=你好")
 
     async def test_delivery_template_uses_order_nickname_amount_and_quantity(self):
@@ -81,6 +82,7 @@ class NotificationDispatchTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(bark_send.await_args.args[1], "金鱼小姐21|会员月卡|¥2.00|1|发货成功")
+        self.assertEqual(bark_send.await_args.kwargs["account_group"], "闲鱼-seller")
 
     async def test_delivery_default_keeps_original_layout_and_adds_amount_and_quantity(self):
         manager = NotificationManager("seller")
@@ -134,6 +136,7 @@ class NotificationDispatchTest(unittest.IsolatedAsyncioTestCase):
             await service._send_notification("小王", "buyer-1", "你好", "chat-1", "item-1", "2026-08-11 11:00:00")
 
         self.assertEqual(bark_send.await_args.args[1], "小王: 你好")
+        self.assertEqual(bark_send.await_args.kwargs["account_group"], "闲鱼-seller")
 
     async def test_account_template_receives_verification_link(self):
         manager = NotificationManager("seller-account-template")

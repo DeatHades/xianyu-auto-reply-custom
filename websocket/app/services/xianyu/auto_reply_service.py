@@ -1125,7 +1125,11 @@ class AutoReplyService:
                     elif channel_type in ('feishu', 'lark'):
                         await send_feishu_notification(config_data, channel_message)
                     elif channel_type == 'bark':
-                        await send_bark_notification(config_data, channel_message)
+                        await send_bark_notification(
+                            config_data,
+                            channel_message,
+                            account_group=f"闲鱼-{self.cookie_id}",
+                        )
                     elif channel_type == 'email':
                         await send_email_notification(config_data, channel_message)
                     elif channel_type == 'webhook':

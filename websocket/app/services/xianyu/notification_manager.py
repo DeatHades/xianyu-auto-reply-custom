@@ -475,7 +475,11 @@ class NotificationManager:
                     await send_feishu_notification(config_data, channel_message)
                     notification_sent = True
                 elif channel_type == 'bark':
-                    await send_bark_notification(config_data, channel_message)
+                    await send_bark_notification(
+                        config_data,
+                        channel_message,
+                        account_group=f"闲鱼-{self.cookie_id}",
+                    )
                     notification_sent = True
                 elif channel_type == 'email':
                     await send_email_notification(config_data, channel_message, attachment_path)
