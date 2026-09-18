@@ -2240,7 +2240,14 @@ class AutoDeliveryHandler:
 
             # 根据商品ID获取卡券（含来源信息：own/dock_l1/dock_l2）
             logger.info(f"根据商品ID获取卡券: {item_id}")
-            cards = db_manager.get_cards_by_item_id(item_id, spec_name, spec_value)
+            cards = db_manager.get_cards_by_item_id(
+                item_id,
+                spec_name,
+                spec_value,
+                # 仅商品本身确认无规格时，才允许唯一绑定卡券兜底；
+                # 多规格商品仍必须保留原有精确匹配/通用卡券规则。
+                allow_single_card_fallback=not is_multi_spec,
+            )
             
             if not cards:
                 self._last_delivery_fail_reason = f"商品 {item_id} 未配置卡券，无法自动发货"

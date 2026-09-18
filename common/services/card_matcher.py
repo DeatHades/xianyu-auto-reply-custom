@@ -43,6 +43,7 @@ class CardMatcher:
         item_id: str,
         spec_name: Optional[str] = None,
         spec_value: Optional[str] = None,
+        allow_single_card_fallback: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         根据商品ID获取匹配的卡券列表（统一入口）
@@ -60,6 +61,7 @@ class CardMatcher:
             item_id: 商品ID
             spec_name: 规格名称（可选）
             spec_value: 规格值（可选）
+            allow_single_card_fallback: 商品确认无规格时，允许唯一绑定卡券兜底
 
         Returns:
             匹配的卡券字典列表
@@ -86,6 +88,13 @@ class CardMatcher:
 
             # 按 card.id 去重
             matched = self._dedup_cards_by_id(matched)
+
+            if (
+                allow_single_card_fallback
+                and not matched
+                and not (spec_name and spec_value)
+            ):
+                matched = self._get_single_card_fallback(all_cards)
 
             logger.info(
                 f"卡券匹配: item_id={item_id}, 来源=关联表, "
@@ -118,6 +127,19 @@ class CardMatcher:
         # 保持一致行为
         matched = self._dedup_cards_by_id(matched)
 
+        if (
+            allow_single_card_fallback
+            and not matched
+            and not (spec_name and spec_value)
+        ):
+            matched = self._get_single_card_fallback(
+                [self._card_to_dict(card) for card in legacy_cards]
+            )
+
+            for card_dict in matched:
+                card_dict["card_source"] = "own"
+                card_dict["dock_record_id"] = None
+
         logger.info(
             f"卡券匹配: item_id={item_id}, 来源=旧字段, "
             f"查询到={len(legacy_cards)}张, "
@@ -126,6 +148,23 @@ class CardMatcher:
         )
 
         return matched
+
+    def _get_single_card_fallback(
+        self,
+        cards: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """仅在商品确认无规格时，返回第一个绑定的启用卡券。"""
+        unique_cards = self._dedup_cards_by_id(cards)
+
+        if not unique_cards:
+            return []
+
+        card = unique_cards[0]
+        logger.info(
+            "无规格商品未匹配到通用卡券，"
+            f"回退第一个绑定卡券: {card.get('name')} (id={card.get('id')})"
+        )
+        return [card]
 
     @staticmethod
     def _dedup_cards_by_id(

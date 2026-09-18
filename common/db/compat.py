@@ -1539,13 +1539,14 @@ class DBManagerCompat:
             logger.error(f"插入或更新订单失败: {e}")
             return False
     
-    def get_cards_by_item_id(self, item_id: str, spec_name: str = None, spec_value: str = None) -> List[Dict[str, Any]]:
+    def get_cards_by_item_id(self, item_id: str, spec_name: str = None, spec_value: str = None, allow_single_card_fallback: bool = False) -> List[Dict[str, Any]]:
         """根据商品ID获取卡券列表（通过关联表查询，含向后兼容回退）
         
         Args:
             item_id: 商品ID
             spec_name: 规格名称（可选，用于多规格匹配）
             spec_value: 规格值（可选，用于多规格匹配）
+            allow_single_card_fallback: 商品确认无规格时，允许唯一绑定卡券兜底
             
         Returns:
             卡券列表
@@ -1554,7 +1555,12 @@ class DBManagerCompat:
             async with session_maker() as session:
                 from common.services.card_matcher import CardMatcher
                 matcher = CardMatcher(session)
-                return await matcher.get_cards_by_item_id(item_id, spec_name, spec_value)
+                return await matcher.get_cards_by_item_id(
+                    item_id,
+                    spec_name,
+                    spec_value,
+                    allow_single_card_fallback,
+                )
         
         try:
             return self._run_async(_query) or []
