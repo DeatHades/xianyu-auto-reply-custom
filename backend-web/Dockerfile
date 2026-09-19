@@ -18,10 +18,8 @@ RUN apt-get update && apt-get install -y curl ca-certificates gcc \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制项目源码
-COPY common /app/common
-COPY backend-web /app/backend-web
-COPY launcher /app/launcher
+# 先只复制依赖声明，避免业务代码变更导致依赖和浏览器反复下载
+COPY backend-web/pyproject.toml /app/backend-web/pyproject.toml
 
 # 从pyproject.toml提取并安装依赖
 RUN python -c "\
@@ -32,6 +30,11 @@ open('/tmp/requirements.txt','w').write('\n'.join(deps))" && \
 
 RUN python -m playwright install --with-deps chromium
 RUN python -m patchright install --with-deps chromium
+
+# 复制项目源码（放在依赖安装之后，提升 Docker 缓存命中率）
+COPY common /app/common
+COPY backend-web /app/backend-web
+COPY launcher /app/launcher
 
 # 创建日志目录
 RUN mkdir -p /app/backend-web/logs /app/static/uploads
