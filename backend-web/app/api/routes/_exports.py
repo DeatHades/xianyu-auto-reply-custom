@@ -38,6 +38,7 @@ from . import (
     cookies,
     cookies_refresh_logs,
     default_replies,
+    default_reply_templates,
     face_verification,
     feedback,
     geetest,
@@ -139,6 +140,7 @@ api_router.include_router(ai.test_router, tags=["AI回复测试"])  # ai.py已�
 # 消息和回复
 api_router.include_router(message.router, prefix="/messages", tags=["消息管理"])
 api_router.include_router(default_replies.router, prefix="/default-replies", tags=["默认回复"])
+api_router.include_router(default_reply_templates.router, prefix="/default-reply-templates", tags=["默认回复模板"])
 api_router.include_router(confirm_receipt_messages.router, prefix="/confirm-receipt-messages", tags=["确认收货消息"])
 api_router.include_router(message_filters.router, prefix="/message-filters", tags=["消息过滤器"])
 

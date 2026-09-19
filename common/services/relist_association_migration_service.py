@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.models.card_item_relation import CardItemRelation
 from common.models.default_reply import DefaultReply
+from common.models.default_reply_template import DefaultReplyTemplateItemRelation
 from common.models.relist_association_migration import RelistAssociationMigration
 from common.models.xy_account import XYAccount
 from common.models.xy_catalog_item import XYCatalogItem
@@ -26,6 +27,7 @@ class RelistAssociationMigrationService:
         "card_relations",
         "keyword_rules",
         "default_replies",
+        "default_reply_template_relations",
         "ai_prompt",
         "delivery_exclusions",
         "personal_blacklist",
@@ -62,6 +64,7 @@ class RelistAssociationMigrationService:
             "card_relations": lambda: self._migrate_card_relations(owner_id, old_item_id, new_item_id),
             "keyword_rules": lambda: self._migrate_keyword_rules(owner_id, account.id, old_item_id, new_item_id),
             "default_replies": lambda: self._migrate_default_replies(account_id, old_item_id, new_item_id),
+            "default_reply_template_relations": lambda: self._migrate_default_reply_template_relations(owner_id, account_id, old_item_id, new_item_id),
             "ai_prompt": lambda: self._migrate_ai_prompt(owner_id, account.id, old_item_id, new_item_id),
             "delivery_exclusions": lambda: self._migrate_delivery_exclusions(owner_id, account_id, old_item_id, new_item_id),
             "personal_blacklist": lambda: self._migrate_personal_blacklist(owner_id, account_id, old_item_id, new_item_id),
@@ -255,6 +258,44 @@ class RelistAssociationMigrationService:
                         reply_once=row.reply_once,
                     )
                 )
+        await self.session.flush()
+
+    async def _migrate_default_reply_template_relations(
+        self,
+        owner_id: int,
+        account_id: str,
+        old_item_id: str,
+        new_item_id: str,
+    ) -> None:
+        row = (
+            await self.session.execute(
+                select(DefaultReplyTemplateItemRelation).where(
+                    DefaultReplyTemplateItemRelation.owner_id == owner_id,
+                    DefaultReplyTemplateItemRelation.account_id == account_id,
+                    DefaultReplyTemplateItemRelation.item_id == old_item_id,
+                )
+            )
+        ).scalars().first()
+        if not row:
+            return
+        exists = (
+            await self.session.execute(
+                select(DefaultReplyTemplateItemRelation.id).where(
+                    DefaultReplyTemplateItemRelation.owner_id == owner_id,
+                    DefaultReplyTemplateItemRelation.account_id == account_id,
+                    DefaultReplyTemplateItemRelation.item_id == new_item_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not exists:
+            self.session.add(
+                DefaultReplyTemplateItemRelation(
+                    owner_id=owner_id,
+                    template_id=row.template_id,
+                    account_id=account_id,
+                    item_id=new_item_id,
+                )
+            )
         await self.session.flush()
 
     async def _migrate_ai_prompt(self, owner_id: int, account_pk: int, old_item_id: str, new_item_id: str) -> None:

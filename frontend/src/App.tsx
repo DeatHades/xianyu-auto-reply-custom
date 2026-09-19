@@ -25,6 +25,7 @@ const Dashboard = React.lazy(() => import('@/pages/dashboard/Dashboard').then(m 
 const DataOverview = React.lazy(() => import('@/pages/data_analysis/DataOverview').then(m => ({ default: m.DataOverview })))
 const Accounts = React.lazy(() => import('@/pages/accounts/Accounts').then(m => ({ default: m.Accounts })))
 const Items = React.lazy(() => import('@/pages/items/Items').then(m => ({ default: m.Items })))
+const DefaultReplyTemplates = React.lazy(() => import('@/pages/defaultReplyTemplates/DefaultReplyTemplates').then(m => ({ default: m.DefaultReplyTemplates })))
 const Orders = React.lazy(() => import('@/pages/orders/Orders').then(m => ({ default: m.Orders })))
 const Keywords = React.lazy(() => import('@/pages/keywords/Keywords').then(m => ({ default: m.Keywords })))
 const About = React.lazy(() => import('@/pages/about/About').then(m => ({ default: m.About })))
@@ -343,6 +344,7 @@ function App() {
             <Route path="accounts" element={<Accounts />} />
             <Route path="accounts/shared-scan" element={<SharedScanManager />} />
             <Route path="items" element={<Items />} />
+            <Route path="default-reply-templates" element={<DefaultReplyTemplates />} />
             <Route path="orders" element={<Orders />} />
             <Route path="keywords" element={<Keywords />} />
             <Route path="message-logs" element={<AutoReplyLogs />} />

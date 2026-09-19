@@ -25,6 +25,7 @@ from common.db.redis_client import distributed_lock
 from common.models.xy_account import XYAccount
 from common.models.xy_catalog_item import XYCatalogItem
 from common.models.default_reply import DefaultReply
+from common.models.default_reply_template import DefaultReplyTemplate, DefaultReplyTemplateItemRelation
 from common.models.card import Card
 
 
@@ -916,7 +917,7 @@ class ItemService:
             items_data: [(item, account_id), ...] 商品数据列表
             
         Returns:
-            {(account_id, item_id): {'enabled': bool, 'has_config': bool}, ...}
+            {(account_id, item_id): {'enabled': bool, 'has_config': bool, ...}, ...}
         """
         if not items_data:
             return {}
@@ -926,7 +927,7 @@ class ItemService:
         account_ids = list(set(acct_id for acct_id, _ in item_keys))
         item_ids = list(set(item_id for _, item_id in item_keys))
         
-        # 查询所有相关的默认回复配置
+        # 查询所有相关的商品级直接默认回复配置
         stmt = select(DefaultReply).where(
             DefaultReply.account_id.in_(account_ids),
             DefaultReply.item_id.in_(item_ids)
@@ -940,8 +941,42 @@ class ItemService:
             key = (reply.account_id, reply.item_id)
             reply_map[key] = {
                 'enabled': reply.enabled,
-                'has_config': True
+                'has_config': True,
+                'source': 'direct',
+                'has_bound_template': False,
+                'template_id': None,
+                'template_name': '',
             }
+
+        owner_ids = list({getattr(item, "owner_id", None) for item, _ in items_data if getattr(item, "owner_id", None) is not None})
+        if owner_ids:
+            template_stmt = (
+                select(DefaultReplyTemplateItemRelation, DefaultReplyTemplate)
+                .join(DefaultReplyTemplate, DefaultReplyTemplate.id == DefaultReplyTemplateItemRelation.template_id)
+                .where(
+                    DefaultReplyTemplateItemRelation.owner_id.in_(owner_ids),
+                    DefaultReplyTemplateItemRelation.account_id.in_(account_ids),
+                    DefaultReplyTemplateItemRelation.item_id.in_(item_ids),
+                )
+            )
+            template_rows = (await self.session.execute(template_stmt)).all()
+            for relation, template in template_rows:
+                key = (relation.account_id, relation.item_id)
+                current = reply_map.get(key)
+                # 商品级直接配置启用时实际优先级最高；否则列表展示有效的模板绑定状态。
+                if current and current.get('enabled'):
+                    current['has_bound_template'] = True
+                    current['template_id'] = template.id
+                    current['template_name'] = template.name
+                    continue
+                reply_map[key] = {
+                    'enabled': bool(template.enabled),
+                    'has_config': True,
+                    'source': 'template',
+                    'has_bound_template': True,
+                    'template_id': template.id,
+                    'template_name': template.name,
+                }
         
         return reply_map
 
@@ -1214,6 +1249,10 @@ class ItemService:
             "multi_quantity_delivery": metadata.get("multi_quantity_delivery", False),
             "default_reply_enabled": default_reply_info.get("enabled", False) if default_reply_info else False,
             "has_default_reply": default_reply_info.get("has_config", False) if default_reply_info else False,
+            "default_reply_source": default_reply_info.get("source", "") if default_reply_info else "",
+            "has_bound_default_reply_template": default_reply_info.get("has_bound_template", False) if default_reply_info else False,
+            "default_reply_template_id": default_reply_info.get("template_id") if default_reply_info else None,
+            "default_reply_template_name": default_reply_info.get("template_name", "") if default_reply_info else "",
             "has_card": has_card,
             "created_at": self._format_dt(item.created_at),
             "updated_at": self._format_dt(item.updated_at),

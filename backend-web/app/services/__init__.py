@@ -5,6 +5,7 @@ from app.services.ai_reply_service import AIReplySettingsService
 from app.services.ai_conversation_service import AIConversationService
 from app.services.card_service import CardService
 from app.services.default_reply_service import DefaultReplyService
+from app.services.default_reply_template_service import DefaultReplyTemplateService
 from app.services.item_service import ItemService
 from app.services.keyword_service import KeywordService
 from app.services.order_service import OrderService
@@ -16,6 +17,7 @@ __all__ = [
     "AIConversationService",
     "CardService",
     "DefaultReplyService",
+    "DefaultReplyTemplateService",
     "ItemService",
     "KeywordService",
     "OrderService",

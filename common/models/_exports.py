@@ -11,6 +11,7 @@ from common.models.xy_keyword_rule import XYKeywordRule
 from common.models.xy_order import XYOrder
 from common.models.card import Card
 from common.models.default_reply import DefaultReply, DefaultReplyRecord
+from common.models.default_reply_template import DefaultReplyTemplate, DefaultReplyTemplateItemRelation
 from common.models.ai_chat_message import AIChatMessage
 from common.models.risk_control_log import XYRiskControlLog as RiskControlLog
 from common.models.account_login_log import XYAccountLoginLog
@@ -83,6 +84,8 @@ __all__ = [
     "Card",
     "DefaultReply",
     "DefaultReplyRecord",
+    "DefaultReplyTemplate",
+    "DefaultReplyTemplateItemRelation",
     "AIChatMessage",
     "RiskControlLog",
     "XYAccountLoginLog",

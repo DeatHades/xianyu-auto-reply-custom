@@ -112,6 +112,12 @@ async def get_default_reply_service(session: AsyncSession = Depends(get_db_sessi
     return DefaultReplyService(session)
 
 
+async def get_default_reply_template_service(session: AsyncSession = Depends(get_db_session)):
+    """获取默认回复模板服务"""
+    from app.services.default_reply_template_service import DefaultReplyTemplateService
+    return DefaultReplyTemplateService(session)
+
+
 async def get_keyword_service(session: AsyncSession = Depends(get_db_session)):
     """获取关键词服务"""
     from app.services.keyword_service import KeywordService

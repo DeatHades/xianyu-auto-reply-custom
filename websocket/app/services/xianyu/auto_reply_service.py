@@ -28,6 +28,7 @@ from common.models.xy_account import XYAccount
 from common.models.xy_keyword_rule import XYKeywordRule
 from common.models.xy_catalog_item import XYCatalogItem
 from common.models.default_reply import DefaultReply, DefaultReplyRecord
+from common.models.default_reply_template import DefaultReplyTemplate, DefaultReplyTemplateItemRelation
 from common.models.user_setting import UserSetting
 from common.models.xy_order import XYOrder
 from common.db.session import async_session_maker
@@ -1757,13 +1758,18 @@ class AutoReplyService:
                 return None
 
             settings_item_id = settings.get("item_id")
+            settings_source = settings.get("source") or ("item" if settings_item_id else "account")
             default_scope = "item" if settings_item_id else "account"
             if reply_trace is not None:
                 reply_trace["reply_strategy"] = "default"
-                reply_trace["matched_rule_type"] = f"default_{default_scope}"
+                reply_trace["matched_rule_type"] = f"default_{settings_source}"
                 reply_trace["default_reply_scope"] = default_scope
                 reply_trace["default_reply_once"] = bool(settings.get("reply_once", False))
-                reply_trace.setdefault("context_snapshot", {})["default_reply_setting_item_id"] = settings_item_id
+                context_snapshot = reply_trace.setdefault("context_snapshot", {})
+                context_snapshot["default_reply_setting_item_id"] = settings_item_id
+                if settings.get("template_id"):
+                    context_snapshot["default_reply_template_id"] = settings.get("template_id")
+                    context_snapshot["default_reply_template_name"] = settings.get("template_name", "")
 
             if settings.get("reply_once", False) and chat_id:
                 has_replied = await self._check_user_replied(session, self.cookie_id, chat_id, settings_item_id)
@@ -1974,7 +1980,7 @@ class AutoReplyService:
     async def _get_default_reply_settings(self, session: AsyncSession, account_id: str, item_id: Optional[str] = None) -> Optional[dict]:
         """获取默认回复设置
         
-        优先级：商品级别 > 账号级别
+        优先级：商品级别直接配置 > 商品绑定模板 > 账号级别
         
         Args:
             session: 数据库会话
@@ -2010,7 +2016,53 @@ class AutoReplyService:
                     "item_id": item_id,
                 }
         
-        # 2. 再查账号级别的默认回复
+        # 2. 再查商品绑定的默认回复模板。模板按账号 + 商品绑定，不影响其他账号。
+        if item_id:
+            account = (
+                await session.execute(
+                    select(XYAccount).where(XYAccount.account_id == account_id)
+                )
+            ).scalars().first()
+            if account:
+                stmt = (
+                    select(DefaultReplyTemplate)
+                    .join(
+                        DefaultReplyTemplateItemRelation,
+                        DefaultReplyTemplateItemRelation.template_id == DefaultReplyTemplate.id,
+                    )
+                    .where(
+                        DefaultReplyTemplateItemRelation.owner_id == account.owner_id,
+                        DefaultReplyTemplateItemRelation.account_id == account_id,
+                        DefaultReplyTemplateItemRelation.item_id == item_id,
+                        DefaultReplyTemplate.enabled.is_(True),
+                    )
+                )
+                result = await session.execute(stmt)
+                template = result.scalars().first()
+                if template:
+                    logger.info(
+                        f"【{account_id}】使用商品绑定默认回复模板，item_id={item_id}, template_id={template.id}"
+                    )
+                    return {
+                        "enabled": bool(template.enabled),
+                        "reply_type": template.reply_type or "text",
+                        "reply_content": template.reply_content or "",
+                        "reply_image": template.reply_image or "",
+                        "api_url": template.api_url or "",
+                        "api_timeout": template.api_timeout or 80,
+                        "location_name": template.location_name or "",
+                        "location_longitude": template.location_longitude or "",
+                        "location_latitude": template.location_latitude or "",
+                        "location_title": template.location_title or "",
+                        "location_subtitle": template.location_subtitle or "",
+                        "reply_once": bool(template.reply_once),
+                        "item_id": item_id,
+                        "source": "template",
+                        "template_id": template.id,
+                        "template_name": template.name,
+                    }
+
+        # 3. 再查账号级别的默认回复
         stmt = select(DefaultReply).where(
             DefaultReply.account_id == account_id,
             DefaultReply.item_id.is_(None)

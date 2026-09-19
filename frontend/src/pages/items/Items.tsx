@@ -2,6 +2,7 @@
 import { CheckSquare, Download, Edit2, ExternalLink, Loader2, Package, PackageX, RefreshCw, Search, Square, Trash2, X, Settings, Plus, MessageSquare, Bot, ChevronLeft, ChevronRight, ImagePlus, Unlink, Tag } from 'lucide-react'
 import { batchDeleteItems, batchDeleteXianyuItems, batchOfflineItems, deleteItem, fetchAllItemsFromAccessibleAccounts, fetchAllItemsFromAccount, getItemsPaginated, updateItem, updateItemMultiQuantityDelivery, updateItemMultiSpec, updateItemPrice, getItemDefaultReply, saveItemDefaultReply, deleteItemDefaultReply, batchSaveItemDefaultReply, batchDeleteItemDefaultReply, getItemAiPrompt, saveItemAiPrompt, batchDeleteItemAiPrompt, batchSaveItemAiPrompt, uploadItemDefaultReplyImage, uploadBatchDefaultReplyImage, type ItemFilterParams } from '@/api/items'
 import { getAccountDetails } from '@/api/accounts'
+import { bindItemDefaultReplyTemplate, getItemDefaultReplyTemplate, listDefaultReplyTemplates, type DefaultReplyTemplate } from '@/api/defaultReplyTemplates'
 import { getUserSetting } from '@/api/settings'
 import { batchClearItemRelations } from '@/api/cards'
 import { ItemCardRelationModal } from './ItemCardRelationModal'
@@ -93,6 +94,9 @@ export function Items() {
   const [defaultReplyApiUrl, setDefaultReplyApiUrl] = useState('')
   const [defaultReplyApiTimeout, setDefaultReplyApiTimeout] = useState(80)
   const [defaultReplyLocation, setDefaultReplyLocation] = useState<LocationContactReplyValue>(EMPTY_LOCATION_REPLY)
+  const [defaultReplyTemplates, setDefaultReplyTemplates] = useState<DefaultReplyTemplate[]>([])
+  const [boundDefaultReplyTemplateId, setBoundDefaultReplyTemplateId] = useState('')
+  const [savingDefaultReplyTemplateBinding, setSavingDefaultReplyTemplateBinding] = useState(false)
   const [loadingDefaultReply, setLoadingDefaultReply] = useState(false)
   const [savingDefaultReply, setSavingDefaultReply] = useState(false)
   const [defaultReplyImageUploading, setDefaultReplyImageUploading] = useState(false)
@@ -680,9 +684,21 @@ export function Items() {
   const handleOpenDefaultReply = async (item: Item) => {
     setDefaultReplyItem(item)
     setDefaultReplyImage('')
+    setDefaultReplyTemplates([])
+    setBoundDefaultReplyTemplateId('')
     setLoadingDefaultReply(true)
     try {
-      const result = await getItemDefaultReply(item.cookie_id, item.item_id)
+      const [result, templateResult, bindingResult] = await Promise.all([
+        getItemDefaultReply(item.cookie_id, item.item_id),
+        listDefaultReplyTemplates(1, 100, ''),
+        getItemDefaultReplyTemplate(item.cookie_id, item.item_id),
+      ])
+      setDefaultReplyTemplates(templateResult.list || [])
+      setBoundDefaultReplyTemplateId(
+        bindingResult.success && bindingResult.data?.template?.id
+          ? String(bindingResult.data.template.id)
+          : ''
+      )
       if (result.success && result.data) {
         setDefaultReplyContent(result.data.reply_content || '')
         setDefaultReplyImage(result.data.reply_image || '')
@@ -709,6 +725,28 @@ export function Items() {
         setDefaultReplyLocation(EMPTY_LOCATION_REPLY)
       }
     } catch {
+      try {
+        const result = await getItemDefaultReply(item.cookie_id, item.item_id)
+        if (result.success && result.data) {
+          setDefaultReplyContent(result.data.reply_content || '')
+          setDefaultReplyImage(result.data.reply_image || '')
+          setDefaultReplyEnabled(result.data.enabled ?? true)
+          setDefaultReplyOnce(result.data.reply_once ?? false)
+          setDefaultReplyType((result.data.reply_type as DefaultReplyType) || 'text')
+          setDefaultReplyApiUrl(result.data.api_url || '')
+          setDefaultReplyApiTimeout(result.data.api_timeout || 80)
+          setDefaultReplyLocation({
+            location_name: result.data.location_name || '',
+            location_longitude: result.data.location_longitude || '',
+            location_latitude: result.data.location_latitude || '',
+            location_title: result.data.location_title || DEFAULT_LOCATION_TITLE,
+            location_subtitle: result.data.location_subtitle || '',
+          })
+          return
+        }
+      } catch {
+        // 继续走下面的空默认值
+      }
       setDefaultReplyContent('')
       setDefaultReplyImage('')
       setDefaultReplyEnabled(true)
@@ -733,6 +771,27 @@ export function Items() {
     setDefaultReplyApiUrl('')
     setDefaultReplyApiTimeout(80)
     setDefaultReplyLocation(EMPTY_LOCATION_REPLY)
+    setDefaultReplyTemplates([])
+    setBoundDefaultReplyTemplateId('')
+  }
+
+  const handleSaveDefaultReplyTemplateBinding = async () => {
+    if (!defaultReplyItem) return
+    setSavingDefaultReplyTemplateBinding(true)
+    try {
+      const templateId = boundDefaultReplyTemplateId ? Number(boundDefaultReplyTemplateId) : null
+      const result = await bindItemDefaultReplyTemplate(defaultReplyItem.cookie_id, defaultReplyItem.item_id, templateId)
+      if (result.success) {
+        addToast({ type: 'success', message: templateId ? '已绑定默认回复模板' : '已取消模板绑定' })
+        await loadItems()
+      } else {
+        addToast({ type: 'error', message: result.message || '保存模板绑定失败' })
+      }
+    } catch {
+      addToast({ type: 'error', message: '保存模板绑定失败' })
+    } finally {
+      setSavingDefaultReplyTemplateBinding(false)
+    }
   }
 
   // 保存默认回复配置
@@ -1659,10 +1718,20 @@ export function Items() {
                             ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400'
                             : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
                         }`}
-                        title={item.has_default_reply ? (item.default_reply_enabled ? '已开启默认回复' : '已配置但未启用') : '点击配置默认回复'}
+                        title={
+                          item.default_reply_source === 'template'
+                            ? `已绑定默认回复模板：${item.default_reply_template_name || ''}`
+                            : item.has_default_reply
+                            ? (item.default_reply_enabled ? '已开启默认回复' : '已配置但未启用')
+                            : '点击配置默认回复'
+                        }
                       >
                         <MessageSquare className="w-3 h-3" />
-                        {item.has_default_reply ? (item.default_reply_enabled ? '已配置' : '已关闭') : '未配置'}
+                        {item.has_default_reply
+                          ? item.default_reply_source === 'template'
+                            ? '模板'
+                            : (item.default_reply_enabled ? '已配置' : '已关闭')
+                          : '未配置'}
                       </button>
                     </td>
                     <td>
@@ -2116,6 +2185,35 @@ export function Items() {
                     </label>
                   </div>
 
+                  <div className="input-group rounded-xl border border-purple-100 dark:border-purple-900/40 bg-purple-50/60 dark:bg-purple-900/10 p-3">
+                    <label className="input-label">绑定默认回复模板（可选）</label>
+                    <div className="flex gap-2">
+                      <select
+                        value={boundDefaultReplyTemplateId}
+                        onChange={(e) => setBoundDefaultReplyTemplateId(e.target.value)}
+                        className="input-ios flex-1"
+                      >
+                        <option value="">不绑定模板</option>
+                        {defaultReplyTemplates.map((template) => (
+                          <option key={template.id} value={template.id}>
+                            {template.name}{template.enabled ? '' : '（已关闭）'}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleSaveDefaultReplyTemplateBinding}
+                        disabled={savingDefaultReplyTemplateBinding}
+                        className="btn-ios-secondary whitespace-nowrap"
+                      >
+                        {savingDefaultReplyTemplateBinding ? '保存中...' : '保存绑定'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-purple-600 dark:text-purple-400 mt-2">
+                      发送优先级：商品直接默认回复 &gt; 绑定模板 &gt; 账号默认回复。这里绑定模板不会覆盖下面手填内容。
+                    </p>
+                  </div>
+
                   {/* 回复类型选择 */}
                   <div className="input-group">
                     <label className="input-label">回复类型</label>
@@ -2293,7 +2391,7 @@ export function Items() {
                     <strong>说明：</strong>
                     <ul className="list-disc list-inside mt-1 space-y-1">
                       <li>商品默认回复优先级高于账号默认回复</li>
-                      <li>回复优先级：关键词 &gt; AI回复 &gt; 商品默认回复 &gt; 账号默认回复</li>
+                      <li>回复优先级：关键词 &gt; AI回复 &gt; 商品直接默认回复 &gt; 绑定模板 &gt; 账号默认回复</li>
                     </ul>
                   </div>
                 </>

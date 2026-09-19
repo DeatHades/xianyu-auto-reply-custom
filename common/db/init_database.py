@@ -737,6 +737,50 @@ class DatabaseInitializer:
                 UNIQUE KEY uk_account_item (account_id, item_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='默认回复表';
         """,
+
+        # 10.1 默认回复模板表
+        "xy_default_reply_templates": """
+            CREATE TABLE IF NOT EXISTS xy_default_reply_templates (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '模板ID',
+                owner_id BIGINT NOT NULL COMMENT '所属用户ID',
+                name VARCHAR(255) NOT NULL COMMENT '模板名称',
+                enabled TINYINT(1) DEFAULT 1 COMMENT '是否启用',
+                reply_type VARCHAR(32) DEFAULT 'text' COMMENT '回复类型：text-文本，api-接口，external_contact-站外联系方式',
+                reply_content TEXT COMMENT '回复内容',
+                reply_image VARCHAR(512) COMMENT '回复图片URL',
+                api_url VARCHAR(1024) DEFAULT NULL COMMENT 'API地址(reply_type=api时POST此地址)',
+                api_timeout INT DEFAULT 80 COMMENT 'API请求超时时间(秒)',
+                location_name VARCHAR(255) DEFAULT NULL COMMENT '站外联系方式定位名称',
+                location_longitude VARCHAR(32) DEFAULT NULL COMMENT '站外联系方式经度',
+                location_latitude VARCHAR(32) DEFAULT NULL COMMENT '站外联系方式纬度',
+                location_title VARCHAR(128) DEFAULT NULL COMMENT '站外联系方式位置标题',
+                location_subtitle VARCHAR(255) DEFAULT NULL COMMENT '站外联系方式位置副标题',
+                reply_once TINYINT(1) DEFAULT 0 COMMENT '只回复一次',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                INDEX idx_owner_id (owner_id),
+                INDEX idx_drt_owner_enabled (owner_id, enabled),
+                INDEX idx_drt_owner_name (owner_id, name)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='默认回复模板表';
+        """,
+
+        # 10.2 默认回复模板商品关联表
+        "xy_default_reply_template_item_relations": """
+            CREATE TABLE IF NOT EXISTS xy_default_reply_template_item_relations (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '关系ID',
+                owner_id BIGINT NOT NULL COMMENT '所属用户ID',
+                template_id BIGINT NOT NULL COMMENT '默认回复模板ID',
+                account_id VARCHAR(80) NOT NULL COMMENT '闲鱼账号标识',
+                item_id VARCHAR(64) NOT NULL COMMENT '商品ID',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                INDEX idx_owner_id (owner_id),
+                INDEX idx_template_id (template_id),
+                INDEX idx_drtir_template (template_id),
+                INDEX idx_drtir_owner_account_item (owner_id, account_id, item_id),
+                UNIQUE KEY uk_drtir_owner_account_item (owner_id, account_id, item_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='默认回复模板商品关联表';
+        """,
         
         # 11. 默认回复记录表
         "xy_default_reply_records": """

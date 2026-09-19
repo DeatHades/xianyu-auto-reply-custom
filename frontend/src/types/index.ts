@@ -145,6 +145,10 @@ export interface Item {
   multi_quantity_delivery?: number | boolean
   default_reply_enabled?: boolean  // 默认回复是否启用
   has_default_reply?: boolean      // 是否配置了默认回复
+  default_reply_source?: string    // 默认回复来源：direct/template
+  has_bound_default_reply_template?: boolean
+  default_reply_template_id?: number | null
+  default_reply_template_name?: string
   has_card?: boolean               // 是否配置了发货卡券
   ai_prompt?: string               // AI提示词
   has_ai_prompt?: boolean          // 是否配置了AI提示词
