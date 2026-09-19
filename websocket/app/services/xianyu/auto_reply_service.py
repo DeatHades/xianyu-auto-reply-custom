@@ -1999,22 +1999,40 @@ class AutoReplyService:
             result = await session.execute(stmt)
             reply = result.scalars().first()
             if reply and reply.enabled:
-                logger.info(f"【{account_id}】使用商品级别默认回复，item_id={item_id}")
-                return {
-                    "enabled": reply.enabled,
-                    "reply_type": getattr(reply, "reply_type", "text") or "text",
-                    "reply_content": reply.reply_content or "",
-                    "reply_image": reply.reply_image or "",
-                    "api_url": getattr(reply, "api_url", "") or "",
-                    "api_timeout": getattr(reply, "api_timeout", 80) or 80,
-                    "location_name": getattr(reply, "location_name", "") or "",
-                    "location_longitude": getattr(reply, "location_longitude", "") or "",
-                    "location_latitude": getattr(reply, "location_latitude", "") or "",
-                    "location_title": getattr(reply, "location_title", "") or "",
-                    "location_subtitle": getattr(reply, "location_subtitle", "") or "",
-                    "reply_once": reply.reply_once,
-                    "item_id": item_id,
-                }
+                reply_type = getattr(reply, "reply_type", "text") or "text"
+                has_effective_reply = False
+                if reply_type == "api":
+                    has_effective_reply = bool((getattr(reply, "api_url", "") or "").strip())
+                elif reply_type == "external_contact":
+                    has_effective_reply = all([
+                        bool((getattr(reply, "location_name", "") or "").strip()),
+                        bool((getattr(reply, "location_longitude", "") or "").strip()),
+                        bool((getattr(reply, "location_latitude", "") or "").strip()),
+                    ])
+                else:
+                    has_effective_reply = bool((reply.reply_content or "").strip()) or bool((reply.reply_image or "").strip())
+
+                if not has_effective_reply:
+                    logger.info(
+                        f"【{account_id}】商品级别默认回复为空，继续查找绑定模板或账号默认回复，item_id={item_id}"
+                    )
+                else:
+                    logger.info(f"【{account_id}】使用商品级别默认回复，item_id={item_id}")
+                    return {
+                        "enabled": reply.enabled,
+                        "reply_type": reply_type,
+                        "reply_content": reply.reply_content or "",
+                        "reply_image": reply.reply_image or "",
+                        "api_url": getattr(reply, "api_url", "") or "",
+                        "api_timeout": getattr(reply, "api_timeout", 80) or 80,
+                        "location_name": getattr(reply, "location_name", "") or "",
+                        "location_longitude": getattr(reply, "location_longitude", "") or "",
+                        "location_latitude": getattr(reply, "location_latitude", "") or "",
+                        "location_title": getattr(reply, "location_title", "") or "",
+                        "location_subtitle": getattr(reply, "location_subtitle", "") or "",
+                        "reply_once": reply.reply_once,
+                        "item_id": item_id,
+                    }
         
         # 2. 再查商品绑定的默认回复模板。模板按账号 + 商品绑定，不影响其他账号。
         if item_id:

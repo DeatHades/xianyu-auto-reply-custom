@@ -100,7 +100,10 @@ export const getItemDefaultReplyTemplate = (
   accountId: string,
   itemId: string,
 ): Promise<ApiResponse<ItemDefaultReplyTemplateBinding>> => {
-  return get(`${PREFIX}/item/${accountId}/${itemId}`)
+  const params = new URLSearchParams()
+  params.append('account_id', accountId)
+  params.append('item_id', itemId)
+  return get(`${PREFIX}/item-binding?${params.toString()}`)
 }
 
 export const bindItemDefaultReplyTemplate = (
@@ -108,5 +111,9 @@ export const bindItemDefaultReplyTemplate = (
   itemId: string,
   templateId: number | null,
 ): Promise<ApiResponse> => {
-  return put(`${PREFIX}/item/${accountId}/${itemId}`, { template_id: templateId })
+  return put(`${PREFIX}/item-binding`, {
+    account_id: accountId,
+    item_id: itemId,
+    template_id: templateId,
+  })
 }

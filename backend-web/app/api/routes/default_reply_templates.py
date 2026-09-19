@@ -44,6 +44,8 @@ class UpdateTemplateItemsPayload(BaseModel):
 
 
 class BindItemTemplatePayload(BaseModel):
+    account_id: Optional[str] = None
+    item_id: Optional[str] = None
     template_id: Optional[int] = None
 
 
@@ -104,6 +106,37 @@ async def upload_template_image(
     except ImageUploadError as exc:
         return ApiResponse(success=False, message=exc.message)
     return {"success": True, "image_url": f"/static/uploads/default_reply_template/{filename}"}
+
+
+@router.get("/item-binding")
+async def get_item_template_binding_by_query(
+    account_id: str = Query(...),
+    item_id: str = Query(...),
+    current_user: User = Depends(deps.get_current_active_user),
+    service: DefaultReplyTemplateService = Depends(get_template_service),
+):
+    binding = await service.get_item_binding(current_user.id, account_id, item_id)
+    return ApiResponse(success=True, data=binding or {"account_id": account_id, "item_id": item_id, "template": None})
+
+
+@router.put("/item-binding")
+async def bind_item_template_by_body(
+    payload: BindItemTemplatePayload,
+    current_user: User = Depends(deps.get_current_active_user),
+    service: DefaultReplyTemplateService = Depends(get_template_service),
+):
+    if not payload.account_id or not payload.item_id:
+        return ApiResponse(success=False, message="账号和商品不能为空")
+    try:
+        result = await service.bind_item(
+            owner_id=current_user.id,
+            account_id=payload.account_id,
+            item_id=payload.item_id,
+            template_id=payload.template_id,
+        )
+    except ValueError as exc:
+        return ApiResponse(success=False, message=str(exc))
+    return ApiResponse(success=True, message="默认回复模板绑定已更新", data=result)
 
 
 @router.get("/{template_id}")

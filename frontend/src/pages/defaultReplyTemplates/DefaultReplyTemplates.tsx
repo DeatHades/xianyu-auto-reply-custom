@@ -75,9 +75,20 @@ export function DefaultReplyTemplates() {
     }
   }
 
+  const loadAccounts = async (): Promise<Account[]> => {
+    try {
+      const list = await getAccountDetails()
+      setAccounts(list)
+      return list
+    } catch {
+      addToast({ type: 'error', message: '加载账号列表失败' })
+      return []
+    }
+  }
+
   useEffect(() => {
     loadTemplates('')
-    getAccountDetails().then(setAccounts).catch(() => undefined)
+    loadAccounts()
   }, [])
 
   const openCreate = () => {
@@ -188,18 +199,29 @@ export function DefaultReplyTemplates() {
 
   const openBinding = async (template: DefaultReplyTemplate) => {
     setBindingTemplate(template)
-    const defaultAccount = bindAccountId || accounts[0]?.id || ''
+    setBindItems([])
+    setSelectedItemIds(new Set())
+    const availableAccounts = accounts.length > 0 ? accounts : await loadAccounts()
+    const defaultAccount = bindAccountId || availableAccounts[0]?.id || ''
     setBindAccountId(defaultAccount)
     setBindKeyword('')
+    if (!defaultAccount) {
+      addToast({ type: 'warning', message: '请先添加闲鱼账号并同步商品' })
+      return
+    }
     await loadBindingItems(template, defaultAccount, '')
   }
 
   const loadBindingItems = async (template = bindingTemplate, accountId = bindAccountId, keyword = bindKeyword) => {
-    if (!template || !accountId) return
+    if (!template || !accountId) {
+      setBindItems([])
+      setSelectedItemIds(new Set())
+      return
+    }
     setBindingLoading(true)
     try {
       const [itemsResult, boundResult] = await Promise.all([
-        getItemsPaginated(1, 200, accountId, { keyword: keyword.trim() || null }),
+        getItemsPaginated(1, 100, accountId, { keyword: keyword.trim() || null }),
         getDefaultReplyTemplateItems(template.id),
       ])
       setBindItems(itemsResult.data || [])
