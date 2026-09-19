@@ -687,6 +687,7 @@ class DatabaseInitializer:
                 user_id BIGINT NOT NULL COMMENT '所属用户ID',
                 item_id VARCHAR(64) COMMENT '关联商品ID',
                 name VARCHAR(255) NOT NULL COMMENT '卡券名称',
+                group_name VARCHAR(120) DEFAULT NULL COMMENT '卡券分组名称',
                 type VARCHAR(50) NOT NULL COMMENT '卡券类型(api/text/data/image)',
                 description TEXT COMMENT '卡券描述',
                 enabled TINYINT(1) DEFAULT 1 COMMENT '是否启用',
@@ -2153,6 +2154,7 @@ class DatabaseInitializer:
         "xy_cards": [
             ("delivery_count", "INT DEFAULT 0 COMMENT '发货次数'", "delay_seconds"),
             ("use_no_logistics_form", "TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否通过无需邮寄表单发货'", "delay_seconds"),
+            ("group_name", "VARCHAR(120) DEFAULT NULL COMMENT '卡券分组名称'", "name"),
             ("price", "VARCHAR(32) COMMENT '对接价格'", "delivery_count"),
             ("is_dockable", "TINYINT(1) DEFAULT 0 COMMENT '是否可对接'", "price"),
             ("image_urls", "TEXT COMMENT '多图片URL列表(JSON数组，最多3张)'", "image_url"),

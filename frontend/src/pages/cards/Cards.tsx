@@ -11,9 +11,9 @@
 import { useState, useEffect } from 'react'
 import {
   Ticket, RefreshCw, Trash2, Search, Power, PowerOff, Image,
-  ChevronLeft, ChevronRight, CheckSquare, Square, Edit2, Copy, Eye, Plus, Link
+  ChevronLeft, ChevronRight, CheckSquare, Square, Edit2, Copy, Eye, Plus, Link, Folder
 } from 'lucide-react'
-import { getCards, updateCard, deleteCard, batchDeleteCards, type CardData, type CardPaginatedResult } from '@/api/cards'
+import { getCards, getCardGroups, updateCard, deleteCard, batchDeleteCards, type CardData, type CardPaginatedResult } from '@/api/cards'
 import { useUIStore } from '@/store/uiStore'
 import { useAuthStore } from '@/store/authStore'
 import { PageLoading } from '@/components/common/Loading'
@@ -48,9 +48,12 @@ export function Cards() {
   // 已应用的查询条件（仅在点「查询」或回车时更新，用于实际发起请求）
   const [searchText, setSearchText] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('')
+  const [groupFilter, setGroupFilter] = useState<string>('')
   // 草稿状态：承接输入框/下拉的即时输入，不触发查询
   const [searchDraft, setSearchDraft] = useState('')
   const [typeDraft, setTypeDraft] = useState<string>('')
+  const [groupDraft, setGroupDraft] = useState<string>('')
+  const [cardGroups, setCardGroups] = useState<string[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; card: CardData | null }>({ open: false, card: null })
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false)
@@ -72,12 +75,13 @@ export function Cards() {
   const [pageSize, setPageSize] = useState(20)
 
   // 加载卡券列表（后端分页）
-  const loadCards = async (p?: number, ps?: number, s?: string, t?: string) => {
+  const loadCards = async (p?: number, ps?: number, s?: string, t?: string, g?: string) => {
     if (!_hasHydrated || !isAuthenticated || !token) return
     const currentPage = p ?? page
     const currentPageSize = ps ?? pageSize
     const currentSearch = s ?? searchText
     const currentType = t ?? typeFilter
+    const currentGroup = g ?? groupFilter
     try {
       setLoading(true)
       const result: CardPaginatedResult = await getCards({
@@ -85,6 +89,7 @@ export function Cards() {
         page_size: currentPageSize,
         search: currentSearch || undefined,
         type: currentType || undefined,
+        group_name: currentGroup || undefined,
       })
       setCards(result.list || [])
       setTotal(result.total || 0)
@@ -96,26 +101,40 @@ export function Cards() {
     }
   }
 
+  const loadCardGroups = async () => {
+    if (!_hasHydrated || !isAuthenticated || !token) return
+    try {
+      const groups = await getCardGroups()
+      setCardGroups(groups)
+    } catch {
+      // 分组加载失败不影响卡券列表主流程
+    }
+  }
+
   useEffect(() => {
     loadCards()
+    loadCardGroups()
   }, [_hasHydrated, isAuthenticated, token])
 
   // 点击「查询」或搜索框回车：将草稿值应用为查询条件并从第 1 页加载
   const handleSearch = () => {
     setSearchText(searchDraft)
     setTypeFilter(typeDraft)
+    setGroupFilter(groupDraft)
     setPage(1)
-    loadCards(1, pageSize, searchDraft, typeDraft)
+    loadCards(1, pageSize, searchDraft, typeDraft, groupDraft)
   }
 
   // 重置筛选：清空草稿与已应用条件，并从第 1 页重新加载
   const handleResetFilter = () => {
     setSearchDraft('')
     setTypeDraft('')
+    setGroupDraft('')
     setSearchText('')
     setTypeFilter('')
+    setGroupFilter('')
     setPage(1)
-    loadCards(1, pageSize, '', '')
+    loadCards(1, pageSize, '', '', '')
   }
 
   // 当前页数据即后端返回的列表
@@ -141,6 +160,7 @@ export function Cards() {
       addToast({ type: 'success', message: '卡券已删除' })
       setDeleteConfirm({ open: false, card: null })
       loadCards()
+      loadCardGroups()
     } catch {
       addToast({ type: 'error', message: '删除失败' })
     }
@@ -154,6 +174,7 @@ export function Cards() {
       setSelectedIds(new Set())
       setBatchDeleteConfirm(false)
       loadCards()
+      loadCardGroups()
     } catch {
       addToast({ type: 'error', message: '批量删除失败' })
     }
@@ -186,6 +207,7 @@ export function Cards() {
     setShowFormModal(false)
     setEditingCardId(null)
     setFormInitialData(emptyCardFormData)
+    loadCardGroups()
   }
 
   // 全选/取消全选
@@ -282,12 +304,25 @@ export function Cards() {
                 <option value="image">图片卡券</option>
               </select>
             </div>
+            <div className="input-group">
+              <label className="input-label">卡券分组</label>
+              <select
+                value={groupDraft}
+                onChange={e => setGroupDraft(e.target.value)}
+                className="input-ios"
+              >
+                <option value="">全部</option>
+                {cardGroups.map(group => (
+                  <option key={group} value={group}>{group}</option>
+                ))}
+              </select>
+            </div>
             <div className="flex items-end gap-2 ml-auto">
               <button onClick={handleSearch} className="btn-ios-primary">
                 <Search className="w-4 h-4" />
                 查询
               </button>
-              {(searchDraft || typeDraft) && (
+              {(searchDraft || typeDraft || groupDraft) && (
                 <button onClick={handleResetFilter} className="btn-ios-secondary text-red-500">
                   重置筛选
                 </button>
@@ -312,7 +347,7 @@ export function Cards() {
               <RefreshCw className="w-6 h-6 animate-spin text-blue-500" />
             </div>
           ) : (
-            <table className="table-ios min-w-[1080px]">
+            <table className="table-ios min-w-[1180px]">
               <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10">
                 <tr>
                   <th className="w-10 whitespace-nowrap">
@@ -331,6 +366,7 @@ export function Cards() {
                   <th className="whitespace-nowrap w-16">ID</th>
                   <th className="whitespace-nowrap min-w-[250px]">名称</th>
                   <th className="whitespace-nowrap">类型</th>
+                  <th className="whitespace-nowrap">分组</th>
                   <th className="whitespace-nowrap min-w-[300px]">内容预览</th>
                   <th className="whitespace-nowrap">发货设置</th>
                   <th className="whitespace-nowrap">对接信息</th>
@@ -342,10 +378,10 @@ export function Cards() {
               <tbody>
                 {pagedCards.length === 0 ? (
                   <tr>
-                    <td colSpan={10}>
+                    <td colSpan={11}>
                       <div className="empty-state py-8">
                         <Ticket className="empty-state-icon" />
-                        <p className="text-gray-500">{searchText || typeFilter ? '没有匹配的卡券' : '暂无卡券数据'}</p>
+                        <p className="text-gray-500">{searchText || typeFilter || groupFilter ? '没有匹配的卡券' : '暂无卡券数据'}</p>
                       </div>
                     </td>
                   </tr>
@@ -391,6 +427,16 @@ export function Cards() {
                         <span className={`${cardTypeBadge[card.type] || 'badge-gray'} text-xs`}>
                           {cardTypeLabels[card.type] || card.type}
                         </span>
+                      </td>
+                      <td className="align-top">
+                        {card.group_name ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                            <Folder className="w-3 h-3" />
+                            {card.group_name}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">未分组</span>
+                        )}
                       </td>
                       {/* 内容预览 */}
                       <td className="max-w-[220px] align-top">

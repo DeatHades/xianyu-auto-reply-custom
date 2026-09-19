@@ -26,6 +26,7 @@ CARD_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 class CardCreate(BaseModel):
     item_id: Optional[str] = None  # 关联商品ID
     name: str
+    group_name: Optional[str] = None  # 卡券分组名称
     type: str  # 'api' | 'text' | 'data' | 'image'
     description: Optional[str] = None
     enabled: Optional[bool] = True
@@ -49,6 +50,7 @@ class CardCreate(BaseModel):
 class CardUpdate(BaseModel):
     item_id: Optional[str] = None  # 关联商品ID
     name: Optional[str] = None
+    group_name: Optional[str] = None  # 卡券分组名称
     type: Optional[str] = None
     description: Optional[str] = None
     enabled: Optional[bool] = None
@@ -77,6 +79,7 @@ class BatchSaveCardRequest(BaseModel):
     """批量保存卡券请求"""
     item_ids: List[str]
     name: str
+    group_name: Optional[str] = None
     type: str
     description: Optional[str] = None
     enabled: Optional[bool] = True
@@ -168,6 +171,7 @@ async def get_cards(
     page_size: int = Query(default=20, ge=1, le=9999, description="每页数量"),
     search: str = Query(default="", description="搜索关键词（名称或描述）"),
     card_type: str = Query(default="", alias="type", description="卡券类型过滤"),
+    group_name: str = Query(default="", description="卡券分组过滤"),
     lite: bool = Query(default=False, description="轻量模式：仅返回列表所需字段，剔除卡密/文本等大字段"),
     current_user: User = Depends(deps.get_current_active_user),
     card_service: CardService = Depends(get_card_service),
@@ -180,9 +184,21 @@ async def get_cards(
         page_size=page_size,
         search=search,
         card_type=card_type,
+        group_name=group_name,
         lite=lite,
     )
     return result
+
+
+@router.get("/groups")
+async def get_card_groups(
+    current_user: User = Depends(deps.get_current_active_user),
+    card_service: CardService = Depends(get_card_service),
+):
+    """获取当前用户已有卡券分组列表"""
+    user_id, _ = resolve_owner_scope(current_user)
+    groups = await card_service.get_card_groups(user_id)
+    return {"list": groups}
 
 
 @router.get("/item/{item_id}")
@@ -252,6 +268,7 @@ async def create_card(
             user_id=current_user.id,
             item_id=card_data.item_id,
             name=card_data.name,
+            group_name=card_data.group_name,
             card_type=card_data.type,
             api_config=card_data.api_config,
             text_content=card_data.text_content,
@@ -449,6 +466,7 @@ async def batch_save_card(
             user_id=current_user.id,
             item_ids=request.item_ids,
             name=request.name,
+            group_name=request.group_name,
             card_type=request.type,
             api_config=request.api_config,
             text_content=request.text_content,

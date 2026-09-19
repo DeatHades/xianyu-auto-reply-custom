@@ -27,6 +27,7 @@ class Card(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True, comment='所属用户ID')
     item_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True, comment='关联商品ID')  # 关联商品ID
     name: Mapped[str] = mapped_column(String(255), nullable=False, comment='卡券名称')
+    group_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, comment='卡券分组名称')
     type: Mapped[str] = mapped_column(String(50), nullable=False, comment='卡券类型(api/text/data/image)')  # api, text, data, image
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment='卡券描述')
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment='是否启用')

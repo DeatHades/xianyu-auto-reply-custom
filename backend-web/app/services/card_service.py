@@ -38,7 +38,7 @@ class CardService:
     # 轻量模式只需查询的列（剔除 text_content/data_content/api_config/image_urls
     # 等大字段，避免一次性返回全部卡券时传输/读取超大内容）
     _LITE_COLUMNS = (
-        Card.id, Card.user_id, Card.item_id, Card.name, Card.type,
+        Card.id, Card.user_id, Card.item_id, Card.name, Card.group_name, Card.type,
         Card.enabled, Card.delay_seconds, Card.use_no_logistics_form,
         Card.delivery_count, Card.price,
         Card.is_dockable, Card.fee_payer, Card.min_price, Card.dock_visibility,
@@ -53,6 +53,7 @@ class CardService:
         page_size: int = 20,
         search: str = "",
         card_type: str = "",
+        group_name: str = "",
         lite: bool = False,
     ) -> Dict[str, Any]:
         """分页获取卡券列表
@@ -63,6 +64,7 @@ class CardService:
             page_size: 每页数量
             search: 搜索关键词（匹配名称或描述）
             card_type: 卡券类型过滤（api/text/data/image）
+            group_name: 卡券分组过滤
             lite: 轻量模式。为 True 时仅返回列表/选择场景所需的轻字段，
                 剔除 text_content/data_content/api_config/image_urls 等大字段，
                 用于「商品关联卡券」等需要一次性拉取全部卡券的场景，显著减小
@@ -84,6 +86,8 @@ class CardService:
             )
         if card_type:
             base_conditions.append(Card.type == card_type)
+        if group_name:
+            base_conditions.append(Card.group_name == group_name)
         
         # 查询总数
         count_stmt = select(func.count(Card.id))
@@ -113,6 +117,19 @@ class CardService:
             "page_size": page_size,
             "total_pages": total_pages,
         }
+
+    async def get_card_groups(self, user_id: int | None) -> List[str]:
+        """获取已有卡券分组名称列表。空分组不返回。"""
+        stmt = (
+            select(Card.group_name)
+            .where(Card.group_name.is_not(None), Card.group_name != "")
+            .distinct()
+            .order_by(Card.group_name.asc())
+        )
+        if user_id is not None:
+            stmt = stmt.where(Card.user_id == user_id)
+        result = await self.session.execute(stmt)
+        return [row[0] for row in result.all() if row[0]]
 
     async def get_dockable_cards_paginated(
         self,
@@ -471,6 +488,7 @@ class CardService:
         name: str,
         card_type: str,
         item_id: Optional[str] = None,
+        group_name: Optional[str] = None,
         api_config: Optional[Dict] = None,
         text_content: Optional[str] = None,
         data_content: Optional[str] = None,
@@ -513,6 +531,7 @@ class CardService:
             user_id=user_id,
             item_id=item_id,
             name=name,
+            group_name=(group_name or "").strip() or None,
             type=card_type,
             api_config=json.dumps(api_config) if api_config else None,
             text_content=text_content,
@@ -596,6 +615,8 @@ class CardService:
                     value = json.dumps(value)
                 elif key == "image_urls" and isinstance(value, list):
                     value = json.dumps(value)
+                elif key == "group_name" and isinstance(value, str):
+                    value = value.strip() or None
                 setattr(card, key, value)
 
         # 检测并删除被移除的图片文件
@@ -675,6 +696,7 @@ class CardService:
         item_ids: List[str],
         name: str,
         card_type: str,
+        group_name: Optional[str] = None,
         api_config: Optional[Dict] = None,
         text_content: Optional[str] = None,
         data_content: Optional[str] = None,
@@ -711,6 +733,7 @@ class CardService:
             user_id=user_id,
             item_id=None,
             name=name,
+            group_name=(group_name or "").strip() or None,
             type=card_type,
             api_config=json.dumps(api_config) if api_config else None,
             text_content=text_content,
@@ -822,6 +845,7 @@ class CardService:
             "user_id": card.user_id,
             "item_id": card.item_id,
             "name": card.name,
+            "group_name": card.group_name,
             "type": card.type,
             "description": card.description,
             "enabled": card.enabled,
@@ -858,6 +882,7 @@ class CardService:
             "user_id": card.user_id,
             "item_id": card.item_id,
             "name": card.name,
+            "group_name": card.group_name,
             "type": card.type,
             "enabled": card.enabled,
             "delay_seconds": card.delay_seconds,
@@ -896,6 +921,7 @@ class CardService:
             "user_id": card.user_id,
             "item_id": card.item_id,
             "name": card.name,
+            "group_name": card.group_name,
             "type": card.type,
             "description": card.description,
             "enabled": card.enabled,

@@ -42,6 +42,7 @@ const postParams = [
 // 卡券表单数据类型
 interface CardFormData {
   name: string
+  groupName: string
   type: 'api' | 'text' | 'data' | 'image' | ''
   apiUrl: string
   apiMethod: 'GET' | 'POST'
@@ -87,6 +88,7 @@ export function cardToFormData(card: CardData): CardFormData {
   }
   return {
     name: card.name || '',
+    groupName: card.group_name || '',
     type: card.type || '',
     apiUrl: card.api_config?.url || '',
     apiMethod: (card.api_config?.method as 'GET' | 'POST') || 'GET',
@@ -122,6 +124,7 @@ export function cardToCopyFormData(card: CardData): CardFormData {
 /** 空表单初始数据 */
 export const emptyCardFormData: CardFormData = {
   name: '',
+  groupName: '',
   type: 'text',
   apiUrl: '',
   apiMethod: 'GET',
@@ -281,6 +284,7 @@ export function CardFormModal({ cardId, initialData, onClose, onSaved }: CardFor
     try {
       const cardData: Partial<CardData> = {
         name: formData.name.trim(),
+        group_name: formData.groupName.trim() || null,
         type: formData.type as 'api' | 'text' | 'data' | 'image',
         description: formData.description.trim() || undefined,
         enabled: true,
@@ -352,6 +356,17 @@ export function CardFormModal({ cardId, initialData, onClose, onSaved }: CardFor
                   onChange={(e) => updateField('name', e.target.value)}
                   className="input-ios"
                   placeholder="例如：游戏点卡、会员卡等"
+                />
+              </div>
+              <div>
+                <label className="input-label">卡券分组</label>
+                <input
+                  type="text"
+                  value={formData.groupName}
+                  onChange={(e) => updateField('groupName', e.target.value)}
+                  className="input-ios"
+                  placeholder="例如：游戏类、会员类、影视类"
+                  maxLength={120}
                 />
               </div>
               <div>

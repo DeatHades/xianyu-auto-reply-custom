@@ -8,6 +8,7 @@ export interface CardData {
   id?: number
   item_id?: string  // 关联商品ID
   name: string
+  group_name?: string | null  // 卡券分组名称
   type: 'api' | 'text' | 'data' | 'image'
   description?: string
   enabled?: boolean
@@ -50,6 +51,7 @@ export interface CardQueryParams {
   page_size?: number
   search?: string
   type?: string
+  group_name?: string
 }
 
 // 卡券分页响应
@@ -68,9 +70,16 @@ export const getCards = async (params?: CardQueryParams): Promise<CardPaginatedR
   if (params?.page_size) query.set('page_size', String(params.page_size))
   if (params?.search) query.set('search', params.search)
   if (params?.type) query.set('type', params.type)
+  if (params?.group_name) query.set('group_name', params.group_name)
   const qs = query.toString()
   const url = qs ? `${CARD_PREFIX}?${qs}` : CARD_PREFIX
   return get<CardPaginatedResult>(url)
+}
+
+// 获取已有卡券分组
+export const getCardGroups = async (): Promise<string[]> => {
+  const result = await get<{ list: string[] }>(`${CARD_PREFIX}/groups`)
+  return result?.list || []
 }
 
 // 获取全部卡券（不分页，用于关联弹窗等场景）
