@@ -56,7 +56,7 @@ def build_account_proxy_url(
         raise AccountProxyConfigurationError("代理端口无效")
 
     username = (proxy_user or "").strip()
-    password = proxy_pass or ""
+    password = (proxy_pass or "").strip()
     if bool(username) != bool(password):
         raise AccountProxyConfigurationError("代理用户名和密码必须同时填写")
 
