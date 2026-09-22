@@ -33,7 +33,10 @@ from common.services.xianyu_login.login_do import (
     classify_login_response,
     post_login_do,
 )
+from common.models.xy_account import XYAccount
+from common.utils.account_proxy import AccountProxyConfigurationError, build_account_proxy_url
 from common.utils.xianyu_utils import trans_cookies
+from sqlalchemy import select
 
 # 最多解几次滑块（每次解完重发 login.do）
 _MAX_SLIDER_ROUNDS = 3
@@ -188,6 +191,35 @@ def _fail_protocol_login(
     logger.warning(f"【{account_id}】协议登录失败：{reason}")
 
 
+async def _load_account_proxy_url(account_id: str, owner_id: int) -> str | None:
+    async with async_session_maker() as db:
+        stmt = (
+            select(
+                XYAccount.proxy_type,
+                XYAccount.proxy_host,
+                XYAccount.proxy_port,
+                XYAccount.proxy_user,
+                XYAccount.proxy_pass,
+                XYAccount.proxy_force_enabled,
+            )
+            .where(XYAccount.account_id == account_id, XYAccount.owner_id == owner_id)
+            .order_by(XYAccount.id.desc())
+            .limit(1)
+        )
+        result = await db.execute(stmt)
+        row = result.first()
+        if not row:
+            return None
+        return build_account_proxy_url(
+            row.proxy_type,
+            row.proxy_host,
+            row.proxy_port,
+            row.proxy_user,
+            row.proxy_pass,
+            row.proxy_force_enabled,
+        )
+
+
 async def run_protocol_login(
     *, session: Dict[str, Any], account_id: str, account: str, password: str,
     show_browser: bool, owner_id: int,
@@ -200,9 +232,25 @@ async def run_protocol_login(
         return not session.get("cancelled") and (time.time() - start) < _LOGIN_BUDGET
 
     try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0), follow_redirects=False
-        ) as client:
+        try:
+            proxy_url = await _load_account_proxy_url(account_id, owner_id)
+        except AccountProxyConfigurationError as exc:
+            _fail_protocol_login(
+                session,
+                f"代理不可用，已阻止直连登录: {exc}",
+                account_id=account_id,
+            )
+            return
+
+        client_kwargs: Dict[str, Any] = {
+            "timeout": httpx.Timeout(30.0),
+            "follow_redirects": False,
+        }
+        if proxy_url:
+            client_kwargs["proxy"] = proxy_url
+            logger.info(f"【{account_id}】协议登录已启用账号代理")
+
+        async with httpx.AsyncClient(**client_kwargs) as client:
             slider_rounds = 0
             pending_login_cookies: Optional[Dict[str, str]] = None
             while True:

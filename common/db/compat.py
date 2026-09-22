@@ -190,6 +190,7 @@ class DBManagerCompat:
                     'proxy_port': account.proxy_port,
                     'proxy_user': account.proxy_user,
                     'proxy_pass': account.proxy_pass,
+                    'proxy_force_enabled': bool(getattr(account, 'proxy_force_enabled', False)),
                 }
         return self._run_async(_query)
     
@@ -202,23 +203,25 @@ class DBManagerCompat:
                     XYAccount.proxy_host,
                     XYAccount.proxy_port,
                     XYAccount.proxy_user,
-                    XYAccount.proxy_pass
+                    XYAccount.proxy_pass,
+                    XYAccount.proxy_force_enabled,
                 ).where(XYAccount.account_id == cookie_id)
                 result = await session.execute(stmt)
                 row = result.first()
                 if not row:
-                    return {'proxy_type': 'none', 'proxy_host': '', 'proxy_port': 0, 'proxy_user': '', 'proxy_pass': ''}
+                    return {'proxy_type': 'none', 'proxy_host': '', 'proxy_port': 0, 'proxy_user': '', 'proxy_pass': '', 'proxy_force_enabled': False}
                 return {
                     'proxy_type': row.proxy_type or 'none',
                     'proxy_host': row.proxy_host or '',
                     'proxy_port': row.proxy_port or 0,
                     'proxy_user': row.proxy_user or '',
-                    'proxy_pass': row.proxy_pass or ''
+                    'proxy_pass': row.proxy_pass or '',
+                    'proxy_force_enabled': bool(row.proxy_force_enabled),
                 }
         result = self._run_async(_query)
         if result is None:
             logger.warning(f"【{cookie_id}】获取代理配置失败，使用无代理默认配置")
-            return {'proxy_type': 'none', 'proxy_host': '', 'proxy_port': 0, 'proxy_user': '', 'proxy_pass': ''}
+            return {'proxy_type': 'none', 'proxy_host': '', 'proxy_port': 0, 'proxy_user': '', 'proxy_pass': '', 'proxy_force_enabled': False}
         return result
     
     def get_cookie_message_expire_time(self, cookie_id: str) -> int:

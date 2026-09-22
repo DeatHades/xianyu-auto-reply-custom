@@ -23,6 +23,11 @@ from common.utils.cookie_refresh import (
     parse_cookie_string,
 )
 from common.utils.browser_utils import ensure_playwright_browser_path, get_chromium_executable_path
+from common.utils.account_proxy import (
+    AccountProxyConfigurationError,
+    build_account_proxy_url,
+    build_playwright_proxy_config,
+)
 from common.services.captcha.concurrency import run_browser_task
 
 try:
@@ -40,6 +45,12 @@ class CookiesRefreshAccountContext:
     account_id: str
     cookie: str
     metadata_json: dict[str, Any] | None
+    proxy_type: str = "none"
+    proxy_host: str = ""
+    proxy_port: int = 0
+    proxy_user: str = ""
+    proxy_pass: str = ""
+    proxy_force_enabled: bool = False
 
 
 @dataclass(slots=True)
@@ -136,6 +147,25 @@ class CookiesRefreshService:
                 "headless": True,
                 "args": self.BROWSER_ARGS,
             }
+            try:
+                proxy_url = build_account_proxy_url(
+                    account.proxy_type,
+                    account.proxy_host,
+                    account.proxy_port,
+                    account.proxy_user,
+                    account.proxy_pass,
+                    account.proxy_force_enabled,
+                )
+                playwright_proxy = build_playwright_proxy_config(proxy_url)
+                if playwright_proxy:
+                    launch_kwargs["proxy"] = playwright_proxy
+                    logger.info(f"【COOKIES续期】账号 {account.account_id} 浏览器已启用账号代理")
+            except AccountProxyConfigurationError as exc:
+                return CookiesRefreshBrowserResult(
+                    success=False,
+                    message=f"代理不可用，已阻止浏览器直连续期: {exc}",
+                    cookies=[],
+                )
             chromium_path = get_chromium_executable_path()
             if chromium_path:
                 launch_kwargs["executable_path"] = chromium_path
@@ -226,10 +256,30 @@ class CookiesRefreshService:
         metadata_json: dict[str, Any] | None,
     ) -> CookiesRefreshBrowserResult:
         """执行单个账号的浏览器 COOKIES 续期。"""
+        proxy_config = {
+            "proxy_type": "none",
+            "proxy_host": "",
+            "proxy_port": 0,
+            "proxy_user": "",
+            "proxy_pass": "",
+            "proxy_force_enabled": False,
+        }
+        try:
+            from common.db.compat import db_manager
+
+            proxy_config.update(db_manager.get_cookie_proxy_config(account_id) or {})
+        except Exception as exc:
+            logger.warning(f"【COOKIES续期】账号 {account_id} 读取代理配置失败: {exc}")
         account = CookiesRefreshAccountContext(
             account_id=account_id,
             cookie=cookie,
             metadata_json=metadata_json,
+            proxy_type=proxy_config.get("proxy_type") or "none",
+            proxy_host=proxy_config.get("proxy_host") or "",
+            proxy_port=proxy_config.get("proxy_port") or 0,
+            proxy_user=proxy_config.get("proxy_user") or "",
+            proxy_pass=proxy_config.get("proxy_pass") or "",
+            proxy_force_enabled=bool(proxy_config.get("proxy_force_enabled", False)),
         )
         # 浏览器续期为长阻塞任务，走专用线程池，避免占用 asyncio 默认线程池拖垮 aiohttp
         return await run_browser_task(self._sync_refresh_account_cookies, account)

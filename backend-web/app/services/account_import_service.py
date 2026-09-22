@@ -212,6 +212,8 @@ class AccountImportService:
                 existing.proxy_port = _parse_int(row.get("代理端口"), existing.proxy_port or 0) or None
                 existing.proxy_user = _parse_str(row.get("代理用户名")) or existing.proxy_user
                 existing.proxy_pass = _parse_str(row.get("代理密码")) or existing.proxy_pass
+                if "强制代理" in row:
+                    existing.proxy_force_enabled = _parse_bool(row.get("强制代理"))
                 if enable_all:
                     existing.disable_reason = None
                 self.session.add(existing)
@@ -243,6 +245,7 @@ class AccountImportService:
                     proxy_port=_parse_int(row.get("代理端口"), 0) or None,
                     proxy_user=_parse_str(row.get("代理用户名")) or None,
                     proxy_pass=_parse_str(row.get("代理密码")) or None,
+                    proxy_force_enabled=_parse_bool(row.get("强制代理")),
                 )
                 self.session.add(account)
                 self.inserted += 1

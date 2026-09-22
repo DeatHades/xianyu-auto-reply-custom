@@ -28,6 +28,7 @@ class ProxyConfig(BaseModel):
     proxy_port: Optional[int] = None
     proxy_user: Optional[str] = None
     proxy_pass: Optional[str] = None
+    proxy_force_enabled: bool = False
 
 
 class ProxyConfigResponse(BaseModel):
@@ -68,6 +69,7 @@ async def get_proxy_config(
             proxy_port=account.proxy_port,
             proxy_user=account.proxy_user,
             proxy_pass=account.proxy_pass,
+            proxy_force_enabled=bool(account.proxy_force_enabled),
         )
         
         return ProxyConfigResponse(
@@ -100,8 +102,13 @@ async def update_proxy_config(
                 message=f"无效的代理类型，支持的类型: {', '.join(valid_proxy_types)}"
             )
         
-        # 如果设置了代理类型（非none），验证必要字段
-        if config.proxy_type != "none":
+        # 如果设置了代理类型（非none）或开启强制代理，验证必要字段
+        if config.proxy_type != "none" or config.proxy_force_enabled:
+            if config.proxy_type == "none":
+                return ProxyConfigResponse(
+                    success=False,
+                    message="开启强制代理前请选择代理类型"
+                )
             if not config.proxy_host:
                 return ProxyConfigResponse(
                     success=False,
@@ -133,6 +140,7 @@ async def update_proxy_config(
         account.proxy_port = config.proxy_port if config.proxy_type != "none" else None
         account.proxy_user = config.proxy_user if config.proxy_type != "none" else None
         account.proxy_pass = config.proxy_pass if config.proxy_type != "none" else None
+        account.proxy_force_enabled = bool(config.proxy_force_enabled)
         
         session.add(account)
         await session.commit()
@@ -181,6 +189,7 @@ async def clear_proxy_config(
         account.proxy_port = None
         account.proxy_user = None
         account.proxy_pass = None
+        account.proxy_force_enabled = False
         
         session.add(account)
         await session.commit()

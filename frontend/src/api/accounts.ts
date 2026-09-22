@@ -551,6 +551,7 @@ export interface ProxyConfig {
   proxy_port?: number
   proxy_user?: string
   proxy_pass?: string
+  proxy_force_enabled?: boolean
 }
 
 export interface ProxyConfigResponse {

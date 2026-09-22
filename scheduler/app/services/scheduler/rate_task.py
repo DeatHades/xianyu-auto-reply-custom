@@ -355,6 +355,7 @@ class RateTask:
                 account.proxy_port,
                 account.proxy_user,
                 account.proxy_pass,
+                account.proxy_force_enabled,
             )
         except AccountProxyConfigurationError as exc:
             # 代理账号必须 fail-closed：配置异常时不执行任何携带 Cookie 的闲鱼请求。

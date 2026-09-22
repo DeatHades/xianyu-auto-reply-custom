@@ -845,35 +845,36 @@ class AutoDeliveryHandler:
                 'cookie': self.cookies_str.replace('\n', '').replace('\r', '') if self.cookies_str else '',
             }
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
+            if not self.session:
+                await self.parent.create_session()
+            async with self.session.post(
                     'https://h5api.m.goofish.com/h5/mtop.idle.web.trade.order.detail/1.0/',
                     params=params,
                     data={'data': data_val},
                     headers=headers,
                     timeout=aiohttp.ClientTimeout(total=20)
-                ) as response:
-                    res_json = await response.json()
-                    
-                    # 处理响应中的set-cookie，更新本地cookie（令牌过期时服务端会返回新cookie）
-                    self._handle_response_cookies(response)
-                    
-                    # 检查响应是否成功
-                    ret_list = res_json.get('ret', [])
-                    logger.info(f"【{self.cookie_id}】订单 {order_id} API响应: ret={ret_list}")
-                    
-                    if not any('SUCCESS' in ret for ret in ret_list):
-                        logger.warning(f"【{self.cookie_id}】订单 {order_id} API调用失败: {ret_list}")
-                        # API失败重试（令牌过期时set-cookie已更新，重试可用新token）
-                        if retry_count < max_retry - 1:
-                            logger.info(f"【{self.cookie_id}】订单 {order_id} API请求失败，准备重试({retry_count + 1}/{max_retry - 1})...")
-                            await asyncio.sleep(0.5)
-                            return await self._fetch_order_detail_from_api(order_id, retry_count + 1)
-                        return None
-                    
-                    # 解析返回数据
-                    return self._parse_order_detail_response(order_id, res_json)
-                    
+            ) as response:
+                res_json = await response.json()
+
+                # 处理响应中的set-cookie，更新本地cookie（令牌过期时服务端会返回新cookie）
+                self._handle_response_cookies(response)
+
+                # 检查响应是否成功
+                ret_list = res_json.get('ret', [])
+                logger.info(f"【{self.cookie_id}】订单 {order_id} API响应: ret={ret_list}")
+
+                if not any('SUCCESS' in ret for ret in ret_list):
+                    logger.warning(f"【{self.cookie_id}】订单 {order_id} API调用失败: {ret_list}")
+                    # API失败重试（令牌过期时set-cookie已更新，重试可用新token）
+                    if retry_count < max_retry - 1:
+                        logger.info(f"【{self.cookie_id}】订单 {order_id} API请求失败，准备重试({retry_count + 1}/{max_retry - 1})...")
+                        await asyncio.sleep(0.5)
+                        return await self._fetch_order_detail_from_api(order_id, retry_count + 1)
+                    return None
+
+                # 解析返回数据
+                return self._parse_order_detail_response(order_id, res_json)
+
         except asyncio.TimeoutError:
             logger.warning(f"【{self.cookie_id}】订单 {order_id} API请求超时（第{retry_count + 1}次）")
             if retry_count < max_retry - 1:
@@ -3404,57 +3405,58 @@ class AutoDeliveryHandler:
 
             api_url = 'https://h5api.m.goofish.com/h5/mtop.idle.web.trade.rate.list/1.0/'
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
+            if not self.session:
+                await self.parent.create_session()
+            async with self.session.post(
                     api_url,
                     params=params,
                     data={'data': data_val},
                     headers=headers,
                     timeout=aiohttp.ClientTimeout(total=20),
-                ) as response:
-                    res_json = await response.json()
+            ) as response:
+                res_json = await response.json()
 
-                    # 处理响应中的set-cookie，更新本地cookie（令牌过期时服务端会返回新cookie）
-                    self._handle_response_cookies(response)
+                # 处理响应中的set-cookie，更新本地cookie（令牌过期时服务端会返回新cookie）
+                self._handle_response_cookies(response)
 
-                    ret_list = res_json.get('ret', []) or []
-                    logger.info(
-                        f"【{self.cookie_id}】买家评价检查：buyer_id={buyer_id}，第{retry_count + 1}次响应 ret={ret_list}"
+                ret_list = res_json.get('ret', []) or []
+                logger.info(
+                    f"【{self.cookie_id}】买家评价检查：buyer_id={buyer_id}，第{retry_count + 1}次响应 ret={ret_list}"
+                )
+
+                if not any('SUCCESS' in ret for ret in ret_list):
+                    # 调用失败：使用更新后的 cookie 重试一次
+                    if retry_count < max_retry - 1:
+                        logger.info(
+                            f"【{self.cookie_id}】买家评价检查失败，准备重试({retry_count + 1}/{max_retry - 1})..."
+                        )
+                        await asyncio.sleep(0.5)
+                        return await self.check_buyer_rate_count(buyer_id, retry_count + 1)
+                    logger.warning(
+                        f"【{self.cookie_id}】买家评价检查多次失败：buyer_id={buyer_id}, ret={ret_list}"
                     )
+                    return -1
 
-                    if not any('SUCCESS' in ret for ret in ret_list):
-                        # 调用失败：使用更新后的 cookie 重试一次
-                        if retry_count < max_retry - 1:
-                            logger.info(
-                                f"【{self.cookie_id}】买家评价检查失败，准备重试({retry_count + 1}/{max_retry - 1})..."
-                            )
-                            await asyncio.sleep(0.5)
-                            return await self.check_buyer_rate_count(buyer_id, retry_count + 1)
-                        logger.warning(
-                            f"【{self.cookie_id}】买家评价检查多次失败：buyer_id={buyer_id}, ret={ret_list}"
-                        )
-                        return -1
-
-                    data = res_json.get('data') or {}
-                    total_count = data.get('totalCount')
-                    if total_count is None:
-                        logger.warning(
-                            f"【{self.cookie_id}】买家评价响应缺少 totalCount 字段：data keys={list(data.keys())}"
-                        )
-                        return -1
-
-                    try:
-                        total_count_int = int(total_count)
-                    except (TypeError, ValueError):
-                        logger.warning(
-                            f"【{self.cookie_id}】买家评价 totalCount 非数字：{total_count}"
-                        )
-                        return -1
-
-                    logger.info(
-                        f"【{self.cookie_id}】买家评价检查通过：buyer_id={buyer_id}, totalCount={total_count_int}"
+                data = res_json.get('data') or {}
+                total_count = data.get('totalCount')
+                if total_count is None:
+                    logger.warning(
+                        f"【{self.cookie_id}】买家评价响应缺少 totalCount 字段：data keys={list(data.keys())}"
                     )
-                    return total_count_int
+                    return -1
+
+                try:
+                    total_count_int = int(total_count)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        f"【{self.cookie_id}】买家评价 totalCount 非数字：{total_count}"
+                    )
+                    return -1
+
+                logger.info(
+                    f"【{self.cookie_id}】买家评价检查通过：buyer_id={buyer_id}, totalCount={total_count_int}"
+                )
+                return total_count_int
 
         except asyncio.TimeoutError:
             logger.warning(
@@ -3761,42 +3763,43 @@ class AutoDeliveryHandler:
 
             api_url = 'https://h5api.m.goofish.com/h5/mtop.taobao.idle.trade.merchant.close.by.seller/2.0/'
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
+            if not self.session:
+                await self.parent.create_session()
+            async with self.session.post(
                     api_url,
                     params=params,
                     data={'data': data_val},
                     headers=headers,
                     timeout=aiohttp.ClientTimeout(total=20),
-                ) as response:
-                    res_json = await response.json()
+            ) as response:
+                res_json = await response.json()
 
-                    # 处理响应中的set-cookie，更新本地cookie（令牌过期时服务端会返回新cookie）
-                    self._handle_response_cookies(response)
+                # 处理响应中的set-cookie，更新本地cookie（令牌过期时服务端会返回新cookie）
+                self._handle_response_cookies(response)
 
-                    ret_list = res_json.get('ret', []) or []
-                    logger.info(
-                        f"【{self.cookie_id}】关闭订单：order_no={order_no}，第{retry_count + 1}次响应 ret={ret_list}"
-                    )
+                ret_list = res_json.get('ret', []) or []
+                logger.info(
+                    f"【{self.cookie_id}】关闭订单：order_no={order_no}，第{retry_count + 1}次响应 ret={ret_list}"
+                )
 
-                    if any('SUCCESS' in ret for ret in ret_list):
-                        logger.warning(
-                            f"【{self.cookie_id}】✅ 订单关闭成功：order_no={order_no}, reason={close_reason}"
-                        )
-                        return True
-
-                    # 调用失败：使用更新后的 cookie 重试
-                    if retry_count < max_retry - 1:
-                        logger.info(
-                            f"【{self.cookie_id}】关闭订单失败，准备重试({retry_count + 1}/{max_retry - 1})..."
-                        )
-                        await asyncio.sleep(0.5)
-                        return await self.close_order_by_seller(order_no, retry_count + 1)
-
+                if any('SUCCESS' in ret for ret in ret_list):
                     logger.warning(
-                        f"【{self.cookie_id}】关闭订单多次失败：order_no={order_no}, ret={ret_list}"
+                        f"【{self.cookie_id}】✅ 订单关闭成功：order_no={order_no}, reason={close_reason}"
                     )
-                    return False
+                    return True
+
+                # 调用失败：使用更新后的 cookie 重试
+                if retry_count < max_retry - 1:
+                    logger.info(
+                        f"【{self.cookie_id}】关闭订单失败，准备重试({retry_count + 1}/{max_retry - 1})..."
+                    )
+                    await asyncio.sleep(0.5)
+                    return await self.close_order_by_seller(order_no, retry_count + 1)
+
+                logger.warning(
+                    f"【{self.cookie_id}】关闭订单多次失败：order_no={order_no}, ret={ret_list}"
+                )
+                return False
 
         except asyncio.TimeoutError:
             logger.warning(

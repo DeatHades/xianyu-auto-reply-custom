@@ -25,6 +25,11 @@ from common.utils.time_utils import get_beijing_now_naive
 from common.utils.text_utils import safe_str
 from app.services.xianyu.connection_manager import ConnectionManager, ConnectionState
 from app.services.xianyu.token_manager import TokenManager
+from common.utils.account_proxy import (
+    AccountProxyConfigurationError,
+    build_account_proxy_url,
+    is_account_proxy_required,
+)
 
 # 配置常量
 WEBSOCKET_URL = os.getenv('WEBSOCKET_URL', 'wss://wss-goofish.dingtalk.com/')
@@ -187,7 +192,8 @@ class XianyuAsync:
             'proxy_host': '',
             'proxy_port': 0,
             'proxy_user': '',
-            'proxy_pass': ''
+            'proxy_pass': '',
+            'proxy_force_enabled': False,
         }
 
     async def _load_runtime_account_state(self) -> Optional[dict]:
@@ -205,6 +211,7 @@ class XianyuAsync:
                         XYAccount.proxy_port,
                         XYAccount.proxy_user,
                         XYAccount.proxy_pass,
+                        XYAccount.proxy_force_enabled,
                     )
                     .where(XYAccount.account_id == self.cookie_id)
                     .order_by(XYAccount.id.desc())
@@ -225,6 +232,7 @@ class XianyuAsync:
                     'proxy_port': row.proxy_port or 0,
                     'proxy_user': row.proxy_user or '',
                     'proxy_pass': row.proxy_pass or '',
+                    'proxy_force_enabled': bool(row.proxy_force_enabled),
                 }
         except Exception as e:
             logger.warning(f"【{self.cookie_id}】加载账号运行配置失败: {e}")
@@ -258,21 +266,20 @@ class XianyuAsync:
             形如 'http://host:port'、'socks5://user:pass@host:port' 的代理 URL；
             未配置代理时返回 None（调用方应走直连）。
         """
-        proxy_type = self.proxy_config.get('proxy_type', 'none')
-        if proxy_type == 'none':
-            return None
+        return build_account_proxy_url(
+            self.proxy_config.get('proxy_type', 'none'),
+            self.proxy_config.get('proxy_host'),
+            self.proxy_config.get('proxy_port'),
+            self.proxy_config.get('proxy_user'),
+            self.proxy_config.get('proxy_pass'),
+            self.proxy_config.get('proxy_force_enabled', False),
+        )
 
-        host = self.proxy_config.get('proxy_host')
-        port = self.proxy_config.get('proxy_port')
-        user = self.proxy_config.get('proxy_user')
-        password = self.proxy_config.get('proxy_pass')
-
-        if not host or not port:
-            return None
-
-        if user and password:
-            return f"{proxy_type}://{user}:{password}@{host}:{port}"
-        return f"{proxy_type}://{host}:{port}"
+    def _proxy_required(self) -> bool:
+        return is_account_proxy_required(
+            self.proxy_config.get('proxy_type', 'none'),
+            self.proxy_config.get('proxy_force_enabled', False),
+        )
 
     async def _load_system_proxy_settings(self) -> Optional[dict]:
         """读取系统级代理设置（xy_system_settings 表）
@@ -416,19 +423,22 @@ class XianyuAsync:
         """根据当前 self.proxy_config 构造 aiohttp 的 connector
 
         - SOCKS5 / HTTP / HTTPS：用 aiohttp_socks.ProxyConnector，所有请求自动走代理
-        - 无代理或依赖缺失：用普通 TCPConnector 直连
+        - 未启用代理：用普通 TCPConnector 直连
+        - 已启用/强制代理但配置、依赖或连接器异常：抛错阻止直连
 
         统一所有 aiohttp 出站（含 Token 刷新、订单查询等）走同一代理，
         避免与 WebSocket 出站 IP 不一致触发闲鱼风控。
         """
         proxy_type = self.proxy_config.get('proxy_type', 'none')
         if proxy_type == 'none':
+            if self.proxy_config.get('proxy_force_enabled', False):
+                raise AccountProxyConfigurationError("已开启强制代理，但未选择代理类型")
             return aiohttp.TCPConnector(limit=100, limit_per_host=30)
 
         host = self.proxy_config.get('proxy_host')
         port = self.proxy_config.get('proxy_port')
         if not host or not port:
-            return aiohttp.TCPConnector(limit=100, limit_per_host=30)
+            raise AccountProxyConfigurationError("代理主机或端口未配置")
 
         try:
             from aiohttp_socks import ProxyConnector, ProxyType
@@ -439,8 +449,7 @@ class XianyuAsync:
             elif proxy_type in ('http', 'https'):
                 socks_type = ProxyType.HTTP
             else:
-                logger.warning(f"【{self.cookie_id}】未知代理类型: {proxy_type}，回退直连")
-                return aiohttp.TCPConnector(limit=100, limit_per_host=30)
+                raise AccountProxyConfigurationError(f"未知代理类型: {proxy_type}")
 
             connector = ProxyConnector(
                 proxy_type=socks_type,
@@ -453,11 +462,9 @@ class XianyuAsync:
             logger.info(f"【{self.cookie_id}】HTTP Session 走代理: {proxy_type}://{host}:{port}")
             return connector
         except ImportError:
-            logger.error(f"【{self.cookie_id}】aiohttp-socks 未安装，HTTP 代理无法生效，回退直连")
-            return aiohttp.TCPConnector(limit=100, limit_per_host=30)
+            raise AccountProxyConfigurationError("aiohttp-socks 未安装，HTTP 代理无法生效")
         except Exception as e:
-            logger.error(f"【{self.cookie_id}】构造代理 connector 失败: {e}，回退直连")
-            return aiohttp.TCPConnector(limit=100, limit_per_host=30)
+            raise AccountProxyConfigurationError(f"构造代理 connector 失败: {e}") from e
 
     async def create_session(self):
         """创建aiohttp session（按当前 proxy_config 接入代理）"""
@@ -2876,7 +2883,12 @@ class XianyuAsync:
         """主程序入口"""
         try:
             logger.info(f"【{self.cookie_id}】开始启动XianyuAsync主程序...")
-            await self.create_session()
+            self.proxy_config = self._load_proxy_config()
+            try:
+                await self.create_session()
+            except AccountProxyConfigurationError as exc:
+                logger.error(f"【{self.cookie_id}】代理不可用，已阻止账号连接，避免直连泄露: {exc}")
+                return
             logger.info(f"【{self.cookie_id}】Session创建完成,开始WebSocket连接循环...")
             
             while True:
@@ -2893,37 +2905,20 @@ class XianyuAsync:
                             'proxy_port': runtime_state.get('proxy_port', 0),
                             'proxy_user': runtime_state.get('proxy_user', ''),
                             'proxy_pass': runtime_state.get('proxy_pass', ''),
+                            'proxy_force_enabled': runtime_state.get('proxy_force_enabled', False),
                         }
                     else:
                         logger.warning(f"【{self.cookie_id}】无法刷新账号运行配置，保留当前代理配置继续运行")
-
-                    # 系统级代理总开关：xy_system_settings.proxy.enabled
-                    # - 关闭时：账号级代理也不生效（强制直连），让用户可通过系统设置一键关闭所有代理
-                    #   （场景：账号级 SOCKS5 代理批量失效时，无需逐个修改账号配置即可切回直连）
-                    # - 开启时：账号级代理正常生效；账号未配置代理时使用系统代理 API
-                    # - DB 读取失败 (None)：保留账号级代理，避免偶发故障导致全量代理被错误关闭
-                    system_proxy_settings = await self._load_system_proxy_settings()
-                    if (
-                        system_proxy_settings is not None
-                        and not system_proxy_settings.get('enabled', False)
-                        and self.proxy_config.get('proxy_type', 'none') != 'none'
-                    ):
-                        original_type = self.proxy_config.get('proxy_type')
-                        original_host = self.proxy_config.get('proxy_host')
-                        original_port = self.proxy_config.get('proxy_port')
-                        logger.info(
-                            f"【{self.cookie_id}】系统代理总开关已关闭，账号级代理"
-                            f"（{original_type}://{original_host}:{original_port}）"
-                            f"暂不启用，本次走直连"
-                        )
-                        self.proxy_config = self._default_proxy_config()
 
                     # 账号级代理未配置时，尝试使用系统级代理（来自 xy_system_settings.proxy.*）
                     # 优先级：账号代理（xy_account.proxy_type 非 none）> 系统代理 API > 直连
                     # 失败兜底：API 调用失败时保持 'none'，走直连让重连机制自愈
                     # 注意：_fetch_system_proxy_endpoint 内部会再次校验 proxy.enabled，
                     # 总开关关闭时直接返回 None，无需在此重复判断
-                    if self.proxy_config.get('proxy_type', 'none') == 'none':
+                    if (
+                        self.proxy_config.get('proxy_type', 'none') == 'none'
+                        and not self.proxy_config.get('proxy_force_enabled', False)
+                    ):
                         system_proxy = await self._fetch_system_proxy_endpoint()
                         if system_proxy:
                             host, port = system_proxy
@@ -2933,6 +2928,7 @@ class XianyuAsync:
                                 'proxy_port': port,
                                 'proxy_user': '',
                                 'proxy_pass': '',
+                                'proxy_force_enabled': False,
                             }
 
                     # HTTP session 代理状态检测：仅在"代理状态变化"时重建 session
@@ -2940,7 +2936,12 @@ class XianyuAsync:
                     # - 代理被取消（代理 → 直连）：重建切回直连
                     # - 代理 URL 在不同 IP 间切换：不重建，HTTP session 保持已有代理 IP
                     #   （不强求与 WebSocket 同 IP，避免每次重连都重建 session）
-                    new_proxy_url = self._get_proxy_url()
+                    try:
+                        new_proxy_url = self._get_proxy_url()
+                    except AccountProxyConfigurationError as exc:
+                        logger.error(f"【{self.cookie_id}】代理配置不可用，已阻止连接，避免直连泄露: {exc}")
+                        await self._interruptible_sleep(60)
+                        continue
                     current_proxy_url = getattr(self, '_current_session_proxy_url', None)
                     proxy_state_changed = bool(new_proxy_url) != bool(current_proxy_url)
                     if self.session and proxy_state_changed:
@@ -2949,7 +2950,12 @@ class XianyuAsync:
                             f"（{current_proxy_url or '直连'} → {new_proxy_url or '直连'}），重建 session"
                         )
                         await self.close_session()
-                        await self.create_session()
+                        try:
+                            await self.create_session()
+                        except AccountProxyConfigurationError as exc:
+                            logger.error(f"【{self.cookie_id}】代理 session 创建失败，已阻止直连: {exc}")
+                            await self._interruptible_sleep(60)
+                            continue
                     
                     headers = WEBSOCKET_HEADERS.copy()
                     headers['Cookie'] = self.cookies_str.replace('\n', '').replace('\r', '') if self.cookies_str else ''

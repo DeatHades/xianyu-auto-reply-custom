@@ -52,6 +52,9 @@ class XYAccount(TimestampMixin, Base):
     proxy_port: Mapped[int | None] = mapped_column(Integer, comment="代理端口")
     proxy_user: Mapped[str | None] = mapped_column(String(120), comment="代理用户名")
     proxy_pass: Mapped[str | None] = mapped_column(String(255), comment="代理密码")
+    proxy_force_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="强制使用代理，代理不可用时禁止直连"
+    )
 
     # 退款订单注销配置字段
     refund_cancel_enabled: Mapped[bool | None] = mapped_column(Boolean, default=False, comment="退款订单注销开关")
@@ -143,4 +146,3 @@ class XYAccount(TimestampMixin, Base):
         back_populates="account",
         viewonly=True,
     )
-

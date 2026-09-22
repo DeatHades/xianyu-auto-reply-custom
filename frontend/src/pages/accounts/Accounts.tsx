@@ -223,6 +223,7 @@ export function Accounts() {
   const [proxyPort, setProxyPort] = useState<number | ''>('')
   const [proxyUser, setProxyUser] = useState('')
   const [proxyPass, setProxyPass] = useState('')
+  const [proxyForceEnabled, setProxyForceEnabled] = useState(false)
   const [proxySettingsLoading, setProxySettingsLoading] = useState(false)
   const [proxySettingsSaving, setProxySettingsSaving] = useState(false)
 
@@ -1626,6 +1627,7 @@ export function Accounts() {
     setProxyPort('')
     setProxyUser('')
     setProxyPass('')
+    setProxyForceEnabled(false)
     
     try {
       const result = await getProxyConfig(account.id)
@@ -1635,6 +1637,7 @@ export function Accounts() {
         setProxyPort(result.data.proxy_port || '')
         setProxyUser(result.data.proxy_user || '')
         setProxyPass(result.data.proxy_pass || '')
+        setProxyForceEnabled(Boolean(result.data.proxy_force_enabled))
       }
     } catch {
       addToast({ type: 'error', message: '加载代理配置失败' })
@@ -1647,7 +1650,11 @@ export function Accounts() {
     if (!proxySettingsAccount) return
     
     // 验证
-    if (proxyType !== 'none') {
+    if (proxyType !== 'none' || proxyForceEnabled) {
+      if (proxyType === 'none') {
+        addToast({ type: 'warning', message: '开启强制代理前请选择代理类型' })
+        return
+      }
       if (!proxyHost.trim()) {
         addToast({ type: 'warning', message: '请输入代理地址' })
         return
@@ -1666,6 +1673,7 @@ export function Accounts() {
         proxy_port: proxyType !== 'none' ? Number(proxyPort) : undefined,
         proxy_user: proxyType !== 'none' && proxyUser.trim() ? proxyUser.trim() : undefined,
         proxy_pass: proxyType !== 'none' && proxyPass ? proxyPass : undefined,
+        proxy_force_enabled: proxyForceEnabled,
       }
       const result = await updateProxyConfig(proxySettingsAccount.id, config)
       if (result.success) {
@@ -3965,19 +3973,34 @@ export function Accounts() {
                     />
                   </div>
 
-                  <div className="input-group">
-                    <label className="input-label">代理类型</label>
-                    <select
-                      value={proxyType}
-                      onChange={(e) => setProxyType(e.target.value as 'none' | 'http' | 'https' | 'socks5')}
+	                  <div className="input-group">
+	                    <label className="input-label">代理类型</label>
+	                    <select
+	                      value={proxyType}
+	                      onChange={(e) => setProxyType(e.target.value as 'none' | 'http' | 'https' | 'socks5')}
                       className="input-ios"
                     >
                       <option value="none">不使用代理</option>
                       <option value="http">HTTP</option>
                       <option value="https">HTTPS</option>
                       <option value="socks5">SOCKS5</option>
-                    </select>
-                  </div>
+	                    </select>
+	                  </div>
+
+	                  <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900/60 dark:bg-amber-950/30">
+	                    <input
+	                      type="checkbox"
+	                      checked={proxyForceEnabled}
+	                      onChange={(e) => setProxyForceEnabled(e.target.checked)}
+	                      className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+	                    />
+	                    <span>
+	                      <span className="block font-medium text-amber-900 dark:text-amber-100">强制使用代理，禁止直连</span>
+	                      <span className="mt-1 block text-xs text-amber-700 dark:text-amber-200">
+	                        开启后，代理未配置、代理依赖缺失或代理连接失败时，该账号不会连接闲鱼，避免真实 IP 泄露。
+	                      </span>
+	                    </span>
+	                  </label>
 
                   {proxyType !== 'none' && (
                     <>
@@ -4038,11 +4061,12 @@ export function Accounts() {
 
                   <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 text-xs text-slate-500 dark:text-slate-400">
                     <p className="font-medium mb-1">说明：</p>
-                    <ul className="space-y-0.5 list-disc list-inside">
-                      <li>代理用于WebSocket连接和API请求</li>
-                      <li>SOCKS5代理支持更好，推荐使用</li>
-                      <li>修改代理后需要重启账号监听才能生效</li>
-                    </ul>
+	                    <ul className="space-y-0.5 list-disc list-inside">
+	                      <li>代理用于WebSocket连接和API请求</li>
+	                      <li>SOCKS5代理支持更好，推荐使用</li>
+	                      <li>开启强制代理后，代理不可用会停止该账号连接，不会回退直连</li>
+	                      <li>修改代理后需要重启账号监听才能生效</li>
+	                    </ul>
                   </div>
                 </>
               )}

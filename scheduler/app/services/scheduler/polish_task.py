@@ -27,6 +27,11 @@ from common.models.scheduled_polish_log import ScheduledPolishLog
 from common.utils.xianyu_utils import trans_cookies, generate_sign
 from common.utils.cookie_refresh import update_account_cookies_in_db
 from common.utils.time_utils import get_beijing_now_naive
+from common.utils.account_proxy import (
+    AccountProxyConfigurationError,
+    build_account_proxy_url,
+    build_aiohttp_proxy_options,
+)
 
 
 class PolishTaskService:
@@ -164,11 +169,34 @@ class PolishTaskService:
 
             # 使用可变的cookie_str，令牌过期刷新后后续商品能用新cookie
             current_cookie_str = account.cookie
+            try:
+                proxy_url = build_account_proxy_url(
+                    account.proxy_type,
+                    account.proxy_host,
+                    account.proxy_port,
+                    account.proxy_user,
+                    account.proxy_pass,
+                    account.proxy_force_enabled,
+                )
+            except AccountProxyConfigurationError as exc:
+                error_msg = f"代理不可用，已阻止直连擦亮: {exc}"
+                logger.warning(f"【{self.task_name}】账号 {account.account_id} {error_msg}")
+                for item in items:
+                    await self._log_execution(
+                        session=session,
+                        batch_id=batch_id,
+                        account_id=account.account_id,
+                        item_id=item.item_id,
+                        success=False,
+                        error_message=error_msg,
+                    )
+                await session.commit()
+                return 0, len(items)
             
             for item in items:
                 try:
                     # 执行擦亮
-                    result = await self._polish_item(current_cookie_str, item.item_id)
+                    result = await self._polish_item(current_cookie_str, item.item_id, proxy_url=proxy_url)
                     
                     # 如果返回了更新后的cookie，写入数据库并用于后续商品
                     if result.get("cookie_str") and result["cookie_str"] != current_cookie_str:
@@ -292,7 +320,13 @@ class PolishTaskService:
         result = await session.execute(stmt)
         return list(result.scalars().all())
 
-    async def _polish_item(self, cookie_str: str, item_id: str, retry_count: int = 0) -> dict:
+    async def _polish_item(
+        self,
+        cookie_str: str,
+        item_id: str,
+        retry_count: int = 0,
+        proxy_url: str | None = None,
+    ) -> dict:
         """
         擦亮商品
         
@@ -371,14 +405,19 @@ class PolishTaskService:
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
             
-            # 发送请求
-            async with aiohttp.ClientSession() as session:
+            # 发送请求；启用账号代理时不允许直连回退
+            connector, request_proxy = build_aiohttp_proxy_options(proxy_url)
+            session_kwargs = {}
+            if connector is not None:
+                session_kwargs["connector"] = connector
+            async with aiohttp.ClientSession(**session_kwargs) as session:
                 async with session.post(
                     'https://h5api.m.goofish.com/h5/mtop.taobao.idle.item.polish/1.0/',
                     params=params,
                     data={'data': data_val},
                     headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=30)
+                    timeout=aiohttp.ClientTimeout(total=30),
+                    proxy=request_proxy,
                 ) as response:
                     result = await response.json()
                     
@@ -409,7 +448,9 @@ class PolishTaskService:
                                     f"已更新Cookie，准备重试({retry_count + 1}/{max_retry - 1})"
                                 )
                                 await asyncio.sleep(0.5)
-                                return await self._polish_item(new_cookie_str, item_id, retry_count + 1)
+                                return await self._polish_item(
+                                    new_cookie_str, item_id, retry_count + 1, proxy_url=proxy_url
+                                )
                         
                         return {"success": False, "message": error_msg, "cookie_str": new_cookie_str}
                         

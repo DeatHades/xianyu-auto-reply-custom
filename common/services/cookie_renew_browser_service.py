@@ -40,6 +40,11 @@ from common.utils.internal_auth import (
 )
 from common.utils.xianyu_utils import trans_cookies
 from common.utils.browser_utils import ensure_playwright_browser_path, get_chromium_executable_path
+from common.utils.account_proxy import (
+    AccountProxyConfigurationError,
+    build_account_proxy_url,
+    build_playwright_proxy_config,
+)
 
 try:
     from playwright.sync_api import sync_playwright
@@ -443,6 +448,28 @@ class CookieRenewBrowserService:
                 "locale": "zh-CN",
                 "timezone_id": "Asia/Shanghai",
             }
+            try:
+                from common.db.compat import db_manager
+
+                proxy_config = db_manager.get_cookie_proxy_config(account_id) if account_id else {}
+                proxy_url = build_account_proxy_url(
+                    proxy_config.get("proxy_type"),
+                    proxy_config.get("proxy_host"),
+                    proxy_config.get("proxy_port"),
+                    proxy_config.get("proxy_user"),
+                    proxy_config.get("proxy_pass"),
+                    proxy_config.get("proxy_force_enabled", False),
+                )
+                playwright_proxy = build_playwright_proxy_config(proxy_url)
+                if playwright_proxy:
+                    launch_kwargs["proxy"] = playwright_proxy
+                    logger.info(f"{log_prefix} 浏览器续期已启用账号代理")
+            except AccountProxyConfigurationError as exc:
+                return CookieRenewBrowserResult(
+                    success=False,
+                    has_quick_enter=False,
+                    message=f"代理不可用，已阻止浏览器直连续期: {exc}",
+                )
             # Docker环境下强制无头模式（容器内无显示器）
             if os.environ.get("BROWSER_HEADLESS", "").lower() == "true":
                 launch_kwargs["headless"] = True

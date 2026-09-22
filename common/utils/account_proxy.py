@@ -17,12 +17,24 @@ _HOST_RE = re.compile(r"^[A-Za-z0-9.-]+$|^\[[0-9A-Fa-f:.]+\]$")
 _PROXY_TYPES = {"http", "https", "socks5"}
 
 
+def is_account_proxy_required(
+    proxy_type: str | None,
+    proxy_force_enabled: bool | None = None,
+) -> bool:
+    """账号是否必须走代理。
+
+    只要账号选择了代理类型，或开启了"强制代理"开关，就不能直连。
+    """
+    return bool(proxy_force_enabled) or (proxy_type or "none").lower().strip() != "none"
+
+
 def build_account_proxy_url(
     proxy_type: str | None,
     proxy_host: str | None,
     proxy_port: int | None,
     proxy_user: str | None = None,
     proxy_pass: str | None = None,
+    proxy_force_enabled: bool | None = None,
 ) -> str | None:
     """构造单账号代理 URL；未启用时返回 ``None``。
 
@@ -31,6 +43,8 @@ def build_account_proxy_url(
     """
     proxy_type = (proxy_type or "none").lower().strip()
     if proxy_type == "none":
+        if proxy_force_enabled:
+            raise AccountProxyConfigurationError("已开启强制代理，但未选择代理类型")
         return None
     if proxy_type not in _PROXY_TYPES:
         raise AccountProxyConfigurationError(f"不支持的代理类型: {proxy_type}")
@@ -69,3 +83,24 @@ def build_aiohttp_proxy_options(proxy_url: str | None) -> tuple[object | None, s
             raise AccountProxyConfigurationError("SOCKS5 代理依赖 aiohttp-socks 未安装") from exc
         return ProxyConnector.from_url(proxy_url, rdns=True), None
     raise AccountProxyConfigurationError("代理地址格式无效")
+
+
+def build_playwright_proxy_config(proxy_url: str | None) -> dict[str, str] | None:
+    """把代理 URL 转成 Playwright 的 ``proxy`` 参数。"""
+    if not proxy_url:
+        return None
+
+    from urllib.parse import urlparse, unquote
+
+    parsed = urlparse(proxy_url)
+    if parsed.scheme not in _PROXY_TYPES or not parsed.hostname or not parsed.port:
+        raise AccountProxyConfigurationError("代理地址格式无效")
+
+    config: dict[str, str] = {
+        "server": f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
+    }
+    if parsed.username:
+        config["username"] = unquote(parsed.username)
+    if parsed.password:
+        config["password"] = unquote(parsed.password)
+    return config

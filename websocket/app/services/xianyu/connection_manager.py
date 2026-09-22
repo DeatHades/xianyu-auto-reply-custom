@@ -236,7 +236,7 @@ class ConnectionManager:
                 elif proxy_type in ['http', 'https']:
                     socks_type = SocksProxyType.HTTP
                 else:
-                    socks_type = None
+                    raise RuntimeError(f"未知代理类型: {proxy_type}")
                 
                 if socks_type:
                     # 解析WebSocket URL获取目标主机和端口
@@ -263,13 +263,12 @@ class ConnectionManager:
                     logger.info(f"【{self.cookie_id}】代理连接建立成功")
                     
             except ImportError:
-                logger.warning(f"【{self.cookie_id}】代理连接需要安装 python-socks: pip install python-socks[asyncio]")
-                logger.warning(f"【{self.cookie_id}】将尝试不使用代理进行WebSocket连接")
-                proxy_sock = None
+                logger.error(f"【{self.cookie_id}】代理连接需要安装 python-socks，已阻止WebSocket直连")
+                raise
             except Exception as e:
                 logger.error(f"【{self.cookie_id}】通过代理建立连接失败: {str(e)}")
-                logger.warning(f"【{self.cookie_id}】将尝试不使用代理进行WebSocket连接")
-                proxy_sock = None
+                logger.warning(f"【{self.cookie_id}】已启用账号代理，禁止回退直连")
+                raise
 
         # 选择正确的请求头参数名（关键修复）
         # ──────────────────────────────────────────────────────────────
