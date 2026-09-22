@@ -3571,6 +3571,24 @@ class AutoDeliveryHandler:
         try:
             from app.services.xianyu.delivery_rules.rule_engine import execute_rules
 
+            try:
+                proxy_url = self.parent._get_proxy_url()
+            except Exception as proxy_e:
+                logger.warning(f'{pf}代理不可用，已跳过禁止发货规则检查，避免直连泄露: {self._safe_str(proxy_e)}')
+                return {
+                    'action': 'allow',
+                    'blocked': False,
+                    'reason_text': '',
+                    'fail_record': '',
+                    'auto_close_enabled': False,
+                    'order_closed': False,
+                    'only_card_enabled': False,
+                    'total_count': -1,
+                    'rule_code': None,
+                    'rule_name': None,
+                    'buyer_fish_nick': self._current_buyer_fish_nick,
+                }
+
             engine_result = await execute_rules(
                 cookie_id=self.cookie_id,
                 cookies_str=self.cookies_str,
@@ -3581,6 +3599,7 @@ class AutoDeliveryHandler:
                 log_prefix=pf,
                 account_pk=account_pk,
                 owner_id=account_owner_id,
+                proxy_url=proxy_url,
             )
         except Exception as e:
             logger.error(f'{pf}规则引擎执行异常: {self._safe_str(e)}，放行')

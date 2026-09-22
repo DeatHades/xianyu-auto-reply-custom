@@ -46,7 +46,11 @@ class BuyerCreditRule(BaseDeliveryRule):
         pf = context.log_prefix or f"【{context.cookie_id}】"
 
         total_count = await self._check_buyer_rate_count(
-            context.cookies_str, context.buyer_id, context.cookie_id, pf
+            context.cookies_str,
+            context.buyer_id,
+            context.cookie_id,
+            pf,
+            proxy_url=context.proxy_url,
         )
 
         # 接口异常（-1）→ 不命中，放行
@@ -95,6 +99,7 @@ class BuyerCreditRule(BaseDeliveryRule):
         cookie_id: str,
         log_prefix: str,
         retry_count: int = 0,
+        proxy_url: str | None = None,
     ) -> int:
         """调用闲鱼评价接口获取买家被评价总数
 
@@ -163,13 +168,20 @@ class BuyerCreditRule(BaseDeliveryRule):
 
             api_url = "https://h5api.m.goofish.com/h5/mtop.idle.web.trade.rate.list/1.0/"
 
-            async with aiohttp.ClientSession() as session:
+            from common.utils.account_proxy import build_aiohttp_proxy_options
+
+            connector, request_proxy = build_aiohttp_proxy_options(proxy_url)
+            session_kwargs = {}
+            if connector is not None:
+                session_kwargs["connector"] = connector
+            async with aiohttp.ClientSession(**session_kwargs) as session:
                 async with session.post(
                     api_url,
                     params=params,
                     data={"data": data_val},
                     headers=headers,
                     timeout=aiohttp.ClientTimeout(total=20),
+                    proxy=request_proxy,
                 ) as response:
                     res_json = await response.json()
                     ret_list = res_json.get("ret", []) or []
@@ -178,7 +190,12 @@ class BuyerCreditRule(BaseDeliveryRule):
                         if retry_count < max_retry - 1:
                             await asyncio.sleep(0.5)
                             return await self._check_buyer_rate_count(
-                                cookies_str, buyer_id, cookie_id, log_prefix, retry_count + 1
+                                cookies_str,
+                                buyer_id,
+                                cookie_id,
+                                log_prefix,
+                                retry_count + 1,
+                                proxy_url=proxy_url,
                             )
                         logger.warning(
                             f"{log_prefix}[买家信用度规则] 接口多次失败：buyer_id={buyer_id}, ret={ret_list}"
@@ -199,14 +216,24 @@ class BuyerCreditRule(BaseDeliveryRule):
             if retry_count < max_retry - 1:
                 await asyncio.sleep(0.5)
                 return await self._check_buyer_rate_count(
-                    cookies_str, buyer_id, cookie_id, log_prefix, retry_count + 1
+                    cookies_str,
+                    buyer_id,
+                    cookie_id,
+                    log_prefix,
+                    retry_count + 1,
+                    proxy_url=proxy_url,
                 )
             return -1
         except Exception as e:
             if retry_count < max_retry - 1:
                 await asyncio.sleep(0.5)
                 return await self._check_buyer_rate_count(
-                    cookies_str, buyer_id, cookie_id, log_prefix, retry_count + 1
+                    cookies_str,
+                    buyer_id,
+                    cookie_id,
+                    log_prefix,
+                    retry_count + 1,
+                    proxy_url=proxy_url,
                 )
             logger.error(f"{log_prefix}[买家信用度规则] 异常: {e}")
             return -1

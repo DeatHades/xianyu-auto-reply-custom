@@ -44,3 +44,6 @@ class DeliveryCheckContext:
 
     # 卖家所属用户ID
     owner_id: int | None = None
+
+    # 当前账号代理 URL；账号启用代理时，规则内访问闲鱼接口必须使用它。
+    proxy_url: str | None = None

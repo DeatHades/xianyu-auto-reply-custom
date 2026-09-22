@@ -108,6 +108,7 @@ async def execute_rules(
     log_prefix: str = "",
     account_pk: int | None = None,
     owner_id: int | None = None,
+    proxy_url: str | None = None,
 ) -> dict[str, Any]:
     """执行禁止发货规则引擎
 
@@ -123,6 +124,7 @@ async def execute_rules(
         log_prefix: 日志前缀
         account_pk: 账号主键
         owner_id: 所属用户ID
+        proxy_url: 当前账号代理 URL；账号启用代理时，规则内闲鱼接口必须使用它
 
     Returns:
         {
@@ -186,6 +188,7 @@ async def execute_rules(
             rule_config=rule_cfg.get("config") or {},
             account_pk=account_pk,
             owner_id=owner_id,
+            proxy_url=proxy_url,
         )
 
         try:

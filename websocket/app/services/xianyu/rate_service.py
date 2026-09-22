@@ -73,15 +73,17 @@ async def check_item_belongs_to_account(account_id: str, item_id: str) -> bool:
 class RateService:
     """闲鱼评价服务"""
     
-    def __init__(self, cookie_string: str, account_id: str = None):
+    def __init__(self, cookie_string: str, account_id: str = None, proxy_url: str | None = None):
         """初始化评价服务
         
         Args:
             cookie_string: 账号Cookie字符串
             account_id: 账号ID，用于日志记录（可选）
+            proxy_url: 账号启用代理时的代理地址；传入后评价请求绝不直连回退
         """
         self.cookie_string = cookie_string
         self.account_id = account_id
+        self.proxy_url = proxy_url
         self.cookies_dict = self._parse_cookies(cookie_string)
     
     def _parse_cookies(self, cookies_str: str) -> dict:
@@ -151,9 +153,21 @@ class RateService:
             
             url = "https://h5api.m.goofish.com/h5/mtop.taobao.idle.rate.create/4.0/"
             
+            from common.utils.account_proxy import build_aiohttp_proxy_options
+
             timeout = aiohttp.ClientTimeout(total=20)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(url, params=params, headers=headers, data={"data": data_val}) as response:
+            connector, request_proxy = build_aiohttp_proxy_options(self.proxy_url)
+            session_kwargs: dict[str, Any] = {"timeout": timeout}
+            if connector is not None:
+                session_kwargs["connector"] = connector
+            async with aiohttp.ClientSession(**session_kwargs) as session:
+                async with session.post(
+                    url,
+                    params=params,
+                    headers=headers,
+                    data={"data": data_val},
+                    proxy=request_proxy,
+                ) as response:
                     result = await response.json()
                     
                     # 处理响应中的set-cookie，更新本地cookie并写入数据库

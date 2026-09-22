@@ -247,6 +247,7 @@ async def batch_rate_orders(
     from common.services.rate_service import (
         RateService, fetch_merchant_rate_list, get_rate_feedback_content
     )
+    from common.utils.account_proxy import AccountProxyConfigurationError, build_account_proxy_url
     
     if not request.account_ids:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请选择账号")
@@ -296,6 +297,22 @@ async def batch_rate_orders(
                 account_result["message"] = "账号无Cookie"
                 results.append(account_result)
                 continue
+
+            # 账号启用代理/强制代理时，批量补评价的列表查询和评价接口都必须走代理。
+            # 代理配置异常时 fail-closed，避免用服务器真实出口 IP 访问闲鱼。
+            try:
+                proxy_url = build_account_proxy_url(
+                    account.proxy_type,
+                    account.proxy_host,
+                    account.proxy_port,
+                    account.proxy_user,
+                    account.proxy_pass,
+                    account.proxy_force_enabled,
+                )
+            except AccountProxyConfigurationError as exc:
+                account_result["message"] = f"代理不可用，已阻止直连批量补评价: {exc}"
+                results.append(account_result)
+                continue
             
             # 获取评价内容
             feedback = await get_rate_feedback_content(account_id)
@@ -311,6 +328,7 @@ async def batch_rate_orders(
                 page=1,
                 page_size=100,
                 max_retries=3,
+                proxy_url=proxy_url,
             )
             
             if not list_result['success']:
@@ -338,7 +356,11 @@ async def batch_rate_orders(
                     continue
                 
                 try:
-                    rate_service = RateService(current_cookie, account_id=account_id)
+                    rate_service = RateService(
+                        current_cookie,
+                        account_id=account_id,
+                        proxy_url=proxy_url,
+                    )
                     rate_result = await rate_service.rate_buyer(order_id, feedback=feedback)
                     
                     # 如果cookie被刷新了，更新本地变量

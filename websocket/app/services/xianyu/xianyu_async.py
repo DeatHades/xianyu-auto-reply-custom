@@ -1679,8 +1679,21 @@ class XianyuAsync:
             
             logger.info(f"[{msg_time}] 【{self.cookie_id}】收到评价请求，订单ID: {order_id}，商品ID: {item_id}，开始自动评价，内容: {feedback[:30]}...")
             
-            # 调用评价服务（传入account_id支持令牌过期自动刷新Cookie）
-            rate_service = RateService(self.cookies_str, account_id=self.cookie_id)
+            # 调用评价服务（传入account_id支持令牌过期自动刷新Cookie）。
+            # 已启用/强制代理的账号必须 fail-closed，代理不可用时不能用真实出口评价。
+            try:
+                proxy_url = self._get_proxy_url()
+            except AccountProxyConfigurationError as exc:
+                logger.warning(
+                    f"[{msg_time}] 【{self.cookie_id}】代理不可用，已阻止直连自动评价: {exc}"
+                )
+                return
+
+            rate_service = RateService(
+                self.cookies_str,
+                account_id=self.cookie_id,
+                proxy_url=proxy_url,
+            )
             result = await rate_service.rate_buyer(order_id, feedback=feedback)
             
             if result.get('success'):

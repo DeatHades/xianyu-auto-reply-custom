@@ -180,7 +180,14 @@ class RateService:
             return {"success": False, "message": str(e)}
 
 
-async def fetch_merchant_rate_list(cookie_string: str, account_id: str = None, page: int = 1, page_size: int = 20, max_retries: int = 3) -> Dict[str, Any]:
+async def fetch_merchant_rate_list(
+    cookie_string: str,
+    account_id: str = None,
+    page: int = 1,
+    page_size: int = 20,
+    max_retries: int = 3,
+    proxy_url: str | None = None,
+) -> Dict[str, Any]:
     """获取商家待评价订单列表
     
     调用 mtop.taobao.idle.merchant.rate.list 接口获取待评价订单
@@ -191,6 +198,7 @@ async def fetch_merchant_rate_list(cookie_string: str, account_id: str = None, p
         page: 页码，默认1
         page_size: 每页数量，默认20
         max_retries: 最大重试次数，默认3
+        proxy_url: 账号启用代理时的代理地址；传入后获取待评价列表也必须走代理
         
     Returns:
         {
@@ -263,9 +271,21 @@ async def fetch_merchant_rate_list(cookie_string: str, account_id: str = None, p
             
             url = "https://h5api.m.goofish.com/h5/mtop.taobao.idle.merchant.rate.list/1.0/"
             
+            from common.utils.account_proxy import build_aiohttp_proxy_options
+
             timeout_cfg = aiohttp.ClientTimeout(total=20)
-            async with aiohttp.ClientSession(timeout=timeout_cfg) as session:
-                async with session.post(url, params=params, headers=headers, data={"data": data_val}) as response:
+            connector, request_proxy = build_aiohttp_proxy_options(proxy_url)
+            session_kwargs: dict[str, Any] = {"timeout": timeout_cfg}
+            if connector is not None:
+                session_kwargs["connector"] = connector
+            async with aiohttp.ClientSession(**session_kwargs) as session:
+                async with session.post(
+                    url,
+                    params=params,
+                    headers=headers,
+                    data={"data": data_val},
+                    proxy=request_proxy,
+                ) as response:
                     result = await response.json()
                     
                     ret = result.get('ret', [])
@@ -318,7 +338,12 @@ async def fetch_merchant_rate_list(cookie_string: str, account_id: str = None, p
                         )
                         if account_id:
                             mark_account_session_expired(account_id)
-                            trigger_password_login_async(account_id)
+                            if proxy_url:
+                                logger.warning(
+                                    f"账号 {account_id} 已配置代理，已阻止直连密码登录"
+                                )
+                            else:
+                                trigger_password_login_async(account_id)
                         return {
                             'success': False,
                             'items': [],
