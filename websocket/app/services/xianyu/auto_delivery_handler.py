@@ -1743,6 +1743,7 @@ class AutoDeliveryHandler:
                                     send_user_name, send_user_id, item_id,
                                     card_only_send_fail_msg,
                                     chat_id,
+                                    order_id=order_id,
                                 )
 
                         # 如果有消息发送失败，额外发通知告知（不影响订单状态）
@@ -1791,6 +1792,7 @@ class AutoDeliveryHandler:
                                     item_id,
                                     card_only_success_msg,
                                     chat_id,
+                                    order_id=order_id,
                                 )
                         elif len(delivery_contents) > 1:
                             await self.send_delivery_failure_notification(
