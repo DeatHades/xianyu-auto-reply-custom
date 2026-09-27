@@ -296,7 +296,7 @@ class AccountExportService:
         _write_sheet(wb, "卡券商品关联", headers, rows)
 
     def _write_keyword_rules(self, wb: Workbook, rules: list[XYKeywordRule], pk_map: dict) -> None:
-        headers = ["账号ID", "关键词", "回复内容", "回复类型", "图片URL", "定位名称", "经度", "纬度", "位置标题", "位置副标题", "商品ID", "优先级", "启用"]
+        headers = ["账号ID", "关键词", "回复内容", "回复类型", "图片URL", "定位名称", "经度", "纬度", "位置标题", "位置副标题", "商品ID", "优先级", "启用", "AI语义匹配"]
         rows = []
         for rule in rules:
             rows.append([
@@ -304,7 +304,7 @@ class AccountExportService:
                 rule.keyword, rule.reply_content, rule.reply_type,
                 rule.image_url, rule.location_name, rule.location_longitude,
                 rule.location_latitude, rule.location_title, rule.location_subtitle,
-                rule.item_id, rule.priority, rule.is_active,
+                rule.item_id, rule.priority, rule.is_active, rule.semantic_enabled,
             ])
         _write_sheet(wb, "关键词规则", headers, rows)
 

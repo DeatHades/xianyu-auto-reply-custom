@@ -17,6 +17,7 @@ class KeywordDetail(BaseModel):
     location_latitude: str = ""
     location_title: str = ""
     location_subtitle: str = ""
+    semantic_enabled: bool = False
 
 
 class KeywordTextPayload(BaseModel):
@@ -29,6 +30,7 @@ class KeywordTextPayload(BaseModel):
     location_latitude: str = ""
     location_title: str = ""
     location_subtitle: str = ""
+    semantic_enabled: bool = False
 
 
 class KeywordTextUpdatePayload(BaseModel):
@@ -42,6 +44,7 @@ class KeywordTextUpdatePayload(BaseModel):
     location_latitude: str = ""
     location_title: str = ""
     location_subtitle: str = ""
+    semantic_enabled: bool = False
 
 
 class KeywordTextList(BaseModel):

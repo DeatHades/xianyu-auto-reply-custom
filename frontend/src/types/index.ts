@@ -101,6 +101,7 @@ export interface Keyword {
   location_latitude?: string
   location_title?: string
   location_subtitle?: string
+  semantic_enabled?: boolean // 普通关键词未命中时，允许AI仅做规则选择
   created_at?: string
   updated_at?: string
 }

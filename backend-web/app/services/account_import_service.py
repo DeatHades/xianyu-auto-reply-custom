@@ -513,6 +513,8 @@ class AccountImportService:
                 existing.location_subtitle = _parse_str(row.get("位置副标题")) or existing.location_subtitle
                 existing.priority = _parse_int(row.get("优先级"), existing.priority)
                 existing.is_active = _parse_bool(row.get("启用"))
+                if row.get("AI语义匹配") is not None:
+                    existing.semantic_enabled = _parse_bool(row.get("AI语义匹配"))
             else:
                 rule = XYKeywordRule(
                     owner_id=self.owner_id,
@@ -529,6 +531,7 @@ class AccountImportService:
                     item_id=item_id,
                     priority=_parse_int(row.get("优先级"), 100),
                     is_active=_parse_bool(row.get("启用")),
+                    semantic_enabled=_parse_bool(row.get("AI语义匹配")),
                 )
                 self.session.add(rule)
 

@@ -29,6 +29,7 @@ export const saveKeywords = (cookieId: string, keywords: Keyword[]): Promise<Api
       location_latitude: k.location_latitude || '',
       location_title: k.location_title || '',
       location_subtitle: k.location_subtitle || '',
+      semantic_enabled: Boolean(k.semantic_enabled),
     }))
   return post(`${KEYWORD_PREFIX}/${cookieId}`, { keywords: textKeywords })
 }
@@ -54,6 +55,7 @@ export const addKeyword = async (cookieId: string, data: Partial<Keyword>): Prom
     location_latitude: data.location_latitude || '',
     location_title: data.location_title || '',
     location_subtitle: data.location_subtitle || '',
+    semantic_enabled: Boolean(data.semantic_enabled),
   } as Keyword)
   return saveKeywords(cookieId, keywords)
 }
@@ -81,6 +83,7 @@ export const updateKeyword = async (
     location_latitude: data.location_latitude || '',
     location_title: data.location_title || '',
     location_subtitle: data.location_subtitle || '',
+    semantic_enabled: Boolean(data.semantic_enabled),
   })
 }
 
@@ -131,6 +134,7 @@ export const batchAddKeywords = async (cookieId: string, keywords: Partial<Keywo
     location_latitude: k.location_latitude || '',
     location_title: k.location_title || '',
     location_subtitle: k.location_subtitle || '',
+    semantic_enabled: Boolean(k.semantic_enabled),
   }))]
   return saveKeywords(cookieId, newKeywords)
 }

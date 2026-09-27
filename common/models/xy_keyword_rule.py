@@ -46,6 +46,12 @@ class XYKeywordRule(TimestampMixin, Base):
     item_id: Mapped[str | None] = mapped_column(String(64), comment='商品ID')
     priority: Mapped[int] = mapped_column(Integer, default=100, comment='优先级')
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, comment='是否启用')
+    semantic_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment='是否启用AI语义匹配',
+    )
 
     account: Mapped["XYAccount"] = relationship(
         "XYAccount",
@@ -54,4 +60,3 @@ class XYKeywordRule(TimestampMixin, Base):
         back_populates="keyword_rules",
         viewonly=True,
     )
-

@@ -604,6 +604,7 @@ class DatabaseInitializer:
                 item_id VARCHAR(64) COMMENT '商品ID',
                 priority INT DEFAULT 100 COMMENT '优先级',
                 is_active TINYINT(1) DEFAULT 1 COMMENT '是否启用',
+                semantic_enabled TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否启用AI语义匹配',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
                 INDEX idx_owner_id (owner_id),
@@ -2010,6 +2011,7 @@ class DatabaseInitializer:
             ("location_latitude", "VARCHAR(32) DEFAULT NULL COMMENT '站外联系方式纬度'", "location_longitude"),
             ("location_title", "VARCHAR(128) DEFAULT NULL COMMENT '站外联系方式位置标题'", "location_latitude"),
             ("location_subtitle", "VARCHAR(255) DEFAULT NULL COMMENT '站外联系方式位置副标题'", "location_title"),
+            ("semantic_enabled", "TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否启用AI语义匹配'", "is_active"),
         ],
         "xy_scheduled_tasks": [
             ("run_start_time", "VARCHAR(5) NOT NULL DEFAULT '00:00' COMMENT '执行范围开始时间(HH:MM)'", "enabled"),

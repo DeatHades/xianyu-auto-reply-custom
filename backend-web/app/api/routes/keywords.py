@@ -104,6 +104,7 @@ async def update_single_keyword(
             target_reply=payload.reply,
             target_item_id=payload.item_id,
             target_type=payload.type,
+            semantic_enabled=payload.semantic_enabled,
             location={
                 "location_name": payload.location_name,
                 "location_longitude": payload.location_longitude,
@@ -139,7 +140,7 @@ async def export_keywords(
     workbook = Workbook()
     worksheet = workbook.active
     worksheet.title = "关键词数据"
-    worksheet.append(["关键词", "商品ID", "关键词内容", "回复类型", "定位名称", "经度", "纬度", "位置标题", "位置副标题"])
+    worksheet.append(["关键词", "商品ID", "关键词内容", "回复类型", "定位名称", "经度", "纬度", "位置标题", "位置副标题", "AI语义匹配"])
 
     for kw in keywords:
         if kw.get("type", "text") in {"text", "external_contact"}:
@@ -153,6 +154,7 @@ async def export_keywords(
                 kw.get("location_latitude") or "",
                 kw.get("location_title") or "",
                 kw.get("location_subtitle") or "",
+                "是" if kw.get("semantic_enabled") else "否",
             ])
 
     output = io.BytesIO()
@@ -210,7 +212,7 @@ async def import_keywords(
     column_index = {name: header.index(name) for name in required_columns}
     optional_columns = {
         name: header.index(name) for name in (
-            "回复类型", "定位名称", "经度", "纬度", "位置标题", "位置副标题"
+            "回复类型", "定位名称", "经度", "纬度", "位置标题", "位置副标题", "AI语义匹配"
         ) if name in header
     }
 
@@ -247,6 +249,7 @@ async def import_keywords(
             "location_latitude": optional_value("纬度"),
             "location_title": optional_value("位置标题"),
             "location_subtitle": optional_value("位置副标题"),
+            "semantic_enabled": optional_value("AI语义匹配").lower() in {"1", "true", "yes", "是", "启用"},
         })
     
     if not import_data:

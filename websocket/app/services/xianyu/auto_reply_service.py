@@ -1472,6 +1472,18 @@ class AutoReplyService:
                             reply_trace.setdefault("context_snapshot", {})["keyword_format_error"] = str(e)
                         return reply
 
+            semantic_reply = await self._get_semantic_keyword_reply(
+                session=session,
+                keywords=keywords,
+                send_user_name=send_user_name,
+                send_user_id=send_user_id,
+                send_message=send_message,
+                item_id=item_id,
+                chat_id=chat_id,
+            )
+            if semantic_reply is not None:
+                return semantic_reply
+
             logger.debug(f"未找到匹配的关键词: {send_message[:30]}...")
             return None
 
@@ -1500,6 +1512,7 @@ class AutoReplyService:
             rule_type = (rule.reply_type or "text").lower()
             keywords.append(
                 {
+                    "id": int(rule.id),
                     "keyword": rule.keyword,
                     "reply": rule.reply_content or "",
                     "item_id": rule.item_id or "",
@@ -1511,9 +1524,165 @@ class AutoReplyService:
                     "location_latitude": rule.location_latitude or "",
                     "location_title": rule.location_title or "",
                     "location_subtitle": rule.location_subtitle or "",
+                    "semantic_enabled": bool(rule.semantic_enabled),
                 }
             )
         return keywords
+
+    async def _get_semantic_keyword_reply(
+        self,
+        session: AsyncSession,
+        keywords: list[dict],
+        send_user_name: str,
+        send_user_id: str,
+        send_message: str,
+        item_id: Optional[str],
+        chat_id: str,
+    ) -> Optional[Any]:
+        """Select one opted-in stored keyword rule with AI, then execute it.
+
+        The AI is a classifier only.  Its raw output is validated inside the AI
+        engine and can never become a buyer-facing message.
+        """
+
+        reply_trace = self._reply_trace_var.get()
+        applicable_candidates = [
+            keyword
+            for keyword in keywords
+            if keyword.get("semantic_enabled")
+            and (
+                (item_id and str(keyword.get("item_id") or "") == str(item_id))
+                or not keyword.get("item_id")
+            )
+        ]
+        if not applicable_candidates:
+            return None
+
+        # Item-specific candidates precede common candidates.  The classifier
+        # receives this scope metadata and uses item scope as the tie-breaker.
+        applicable_candidates.sort(
+            key=lambda keyword: (0 if keyword.get("item_id") else 1, int(keyword.get("id") or 0))
+        )
+        if reply_trace is not None:
+            reply_trace.setdefault("context_snapshot", {})[
+                "semantic_candidates_count"
+            ] = len(applicable_candidates)
+
+        try:
+            from app.services.xianyu.ai_reply_engine import get_ai_reply_engine
+
+            selection = await get_ai_reply_engine().select_semantic_keyword_rule(
+                message=send_message,
+                candidates=applicable_candidates,
+                cookie_id=self.cookie_id,
+                db_session=session,
+            )
+        except Exception as exc:
+            logger.warning(
+                f"【{self.cookie_id}】语义关键词处理异常，继续原有回复链: {type(exc).__name__}"
+            )
+            if reply_trace is not None:
+                reply_trace.setdefault("context_snapshot", {})[
+                    "semantic_match_status"
+                ] = "provider_error"
+            return None
+
+        status = str(selection.get("status") or "invalid_result")
+        confidence = selection.get("confidence")
+        selected_rule_id = selection.get("rule_id")
+        if reply_trace is not None:
+            semantic_context = reply_trace.setdefault("context_snapshot", {})
+            semantic_context["semantic_match_status"] = status
+            if confidence is not None:
+                semantic_context["semantic_match_confidence"] = confidence
+            if selected_rule_id is not None:
+                semantic_context["semantic_match_rule_id"] = selected_rule_id
+
+        if status != "matched" or selected_rule_id is None:
+            logger.debug(f"【{self.cookie_id}】语义关键词未命中: status={status}")
+            return None
+
+        selected_rule = next(
+            (
+                keyword
+                for keyword in applicable_candidates
+                if int(keyword.get("id") or 0) == int(selected_rule_id)
+            ),
+            None,
+        )
+        if selected_rule is None:
+            return None
+
+        keyword_label = next(
+            (
+                line.strip()
+                for line in str(selected_rule.get("keyword") or "").splitlines()
+                if line.strip()
+            ),
+            str(selected_rule.get("keyword") or ""),
+        )
+        rule_scope = "item" if selected_rule.get("item_id") else "common"
+        rule_type = str(selected_rule.get("type") or "text").lower()
+        reply = str(selected_rule.get("reply") or "")
+        logger.info(
+            f"【{self.cookie_id}】AI语义关键词命中: rule_id={selected_rule_id}, "
+            f"scope={rule_scope}, confidence={confidence}"
+        )
+        if reply_trace is not None:
+            reply_trace["reply_strategy"] = "keyword"
+            reply_trace["matched_keyword"] = keyword_label
+            reply_trace["matched_rule_type"] = f"keyword_semantic_{rule_scope}"
+            reply_trace.setdefault("context_snapshot", {})["matched_item_title"] = (
+                selected_rule.get("item_title") or None
+            )
+
+        if rule_type == "image" and selected_rule.get("image_url"):
+            image_url = str(selected_rule["image_url"])
+            image_reply = await self._handle_image_keyword(keyword_label, image_url)
+            if reply_trace is not None:
+                if image_reply.startswith("__IMAGE_SEND__"):
+                    reply_trace["reply_mode"] = "image"
+                    reply_trace["reply_image_url"] = image_url
+                    reply_trace["reply_segments"] = [
+                        {"mode": "image", "content": image_url, "index": 1}
+                    ]
+                else:
+                    reply_trace["reply_mode"] = "text"
+                    reply_trace["reply_text"] = image_reply
+                    reply_trace["reply_segments"] = self._build_text_reply_segments(image_reply)
+            return image_reply
+
+        if rule_type == "external_contact":
+            external_reply = await self._do_external_contact_default_reply(
+                session=session,
+                settings=selected_rule,
+                settings_item_id=None,
+                chat_id=chat_id,
+                send_user_id=send_user_id,
+                reply_trace=reply_trace,
+            )
+            return external_reply if external_reply else "EMPTY_REPLY"
+
+        if not reply.strip():
+            return "EMPTY_REPLY"
+
+        try:
+            formatted_reply = reply.format(
+                send_user_name=send_user_name,
+                send_user_id=send_user_id,
+                send_message=send_message,
+                item_id=item_id or "",
+            )
+        except Exception as exc:
+            formatted_reply = reply
+            if reply_trace is not None:
+                reply_trace.setdefault("context_snapshot", {})["keyword_format_error"] = str(exc)
+
+        if reply_trace is not None:
+            reply_trace["reply_mode"] = "text"
+            reply_trace["reply_text"] = formatted_reply
+            reply_trace["reply_segments"] = self._build_text_reply_segments(formatted_reply)
+        return formatted_reply
 
     @classmethod
     def _sort_keywords_for_message(cls, keywords: list[dict], message_folded: str) -> list[dict]:

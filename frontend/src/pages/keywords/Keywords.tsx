@@ -55,6 +55,7 @@ export function Keywords() {
   const [keywordText, setKeywordText] = useState('')
   const [replyText, setReplyText] = useState('')
   const [replyType, setReplyType] = useState<'text' | 'external_contact'>('text')
+  const [semanticEnabled, setSemanticEnabled] = useState(false)
   const [location, setLocation] = useState<LocationContactReplyValue>({
     location_name: '',
     location_longitude: '',
@@ -200,6 +201,7 @@ export function Keywords() {
     setKeywordText('')
     setReplyText('')
     setReplyType('text')
+    setSemanticEnabled(false)
     setLocation({ location_name: '', location_longitude: '', location_latitude: '', location_title: DEFAULT_LOCATION_TITLE, location_subtitle: '' })
     setItemIdText('')
     setSelectedItemIds([])
@@ -234,6 +236,7 @@ export function Keywords() {
     setKeywordText(keyword.keyword)
     setReplyText(keyword.reply)
     setReplyType(keyword.type === 'external_contact' ? 'external_contact' : 'text')
+    setSemanticEnabled(Boolean(keyword.semantic_enabled))
     setLocation({
       location_name: keyword.location_name || '',
       location_longitude: keyword.location_longitude || '',
@@ -310,6 +313,7 @@ export function Keywords() {
             reply: replyText.trim(),
             item_id: itemIdText.trim(),
             type: replyType,
+            semantic_enabled: semanticEnabled,
             ...location,
             location_title: location.location_title.trim() || DEFAULT_LOCATION_TITLE,
           }
@@ -339,6 +343,7 @@ export function Keywords() {
           reply: replyText.trim(),
           item_id: itemId,
           type: replyType,
+          semantic_enabled: semanticEnabled,
           ...location,
           location_title: location.location_title.trim() || DEFAULT_LOCATION_TITLE,
         } as Keyword))
@@ -814,6 +819,11 @@ export function Keywords() {
                             {keywordLine}
                           </code>
                         ))}
+                        {keyword.semantic_enabled && (
+                          <span className="rounded bg-purple-50 px-2 py-1 text-xs text-purple-600 dark:bg-purple-900/30 dark:text-purple-300">
+                            AI语义
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td>
@@ -1117,6 +1127,26 @@ export function Keywords() {
                     </p>
                   </div>
                 )}
+
+                <div className="rounded-xl border border-purple-200 bg-purple-50/60 p-3 dark:border-purple-800 dark:bg-purple-900/20">
+                  <label className="flex cursor-pointer items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={semanticEnabled}
+                      onChange={(e) => setSemanticEnabled(e.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-gray-300"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-slate-800 dark:text-slate-100">启用 AI 语义匹配</span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-600 dark:text-slate-300">
+                        普通精准/包含匹配未命中时，AI只判断买家问题是否对应这条规则。只有高置信度命中后才发送上面预设的回复，AI不会自由生成回复内容。
+                      </span>
+                      <span className="mt-1 block text-xs leading-5 text-purple-600 dark:text-purple-300">
+                        需先在账号管理中填写可用的 AI 接口配置；无需开启原来的“AI回复”开关。
+                      </span>
+                    </span>
+                  </label>
+                </div>
 
               </div>
               <div className="modal-footer">

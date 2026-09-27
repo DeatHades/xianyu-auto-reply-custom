@@ -106,6 +106,7 @@ class KeywordService:
                     "image_url": rule.image_url or "",
                     "item_title": item_title or "",
                     "account_id": account_id or "",
+                    "semantic_enabled": bool(rule.semantic_enabled),
                     **self._location_values(rule),
                 }
             )
@@ -138,6 +139,7 @@ class KeywordService:
                     "type": rule_type,
                     "image_url": rule.image_url or "",
                     "item_title": item_title or "",
+                    "semantic_enabled": bool(rule.semantic_enabled),
                     **self._location_values(rule),
                 }
             )
@@ -175,6 +177,7 @@ class KeywordService:
                 'reply': reply,
                 'item_id': item_id,
                 'type': reply_type,
+                'semantic_enabled': bool(entry.get('semantic_enabled', False)),
                 **location_values,
             }
             if reply_type == 'external_contact':
@@ -227,6 +230,7 @@ class KeywordService:
                     location_subtitle=entry['location_subtitle'] or None,
                     priority=100,
                     is_active=True,
+                    semantic_enabled=entry['semantic_enabled'],
                     created_at=timestamp,
                     updated_at=timestamp,
                 )
@@ -244,6 +248,7 @@ class KeywordService:
         target_reply: str | None,
         target_item_id: str | None,
         target_type: str = 'text',
+        semantic_enabled: bool = False,
         location: dict | None = None,
     ) -> None:
         """更新文本关键词，多行关键词仍保存在同一条规则里便于维护。"""
@@ -331,6 +336,7 @@ class KeywordService:
         existing_rule.location_latitude = normalized_location['location_latitude'] or None
         existing_rule.location_title = normalized_location['location_title'] or None
         existing_rule.location_subtitle = normalized_location['location_subtitle'] or None
+        existing_rule.semantic_enabled = bool(semantic_enabled)
         existing_rule.updated_at = timestamp
 
         await self.session.commit()
