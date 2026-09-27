@@ -94,6 +94,7 @@ export interface Keyword {
   keyword: string
   reply: string
   item_id?: string      // 绑定的商品ID，空表示通用关键词
+  item_title?: string   // 商品名称，关键词列表分组展示使用
   type?: 'text' | 'image' | 'external_contact' | 'item' | 'normal'  // 关键词类型
   image_url?: string    // 图片类型关键词的图片URL
   location_name?: string

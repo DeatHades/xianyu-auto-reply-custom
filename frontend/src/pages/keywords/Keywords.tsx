@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import type { FormEvent, ChangeEvent } from 'react'
 import { motion } from 'framer-motion'
 import { MessageSquare, RefreshCw, Plus, Edit2, Trash2, Upload, Download, Info, Image, MapPin, CheckSquare, Square, Search, ChevronLeft, ChevronRight } from 'lucide-react'
-import { getKeywords, deleteKeyword, saveKeywords, updateKeyword, exportKeywords, importKeywords as importKeywordsApi, addImageKeyword } from '@/api/keywords'
+import { getKeywords, deleteKeyword, saveKeywords, exportKeywords, importKeywords as importKeywordsApi, addImageKeyword } from '@/api/keywords'
 import { getAccountDetails } from '@/api/accounts'
 import { getItems } from '@/api/items'
 import { useUIStore } from '@/store/uiStore'
@@ -41,6 +41,54 @@ const buildKeywordRuleKey = (keyword: string, itemId?: string) =>
 const getKeywordLineKeys = (keyword: Keyword) =>
   parseKeywordLines(keyword.keyword).map(line => buildKeywordRuleKey(line, keyword.item_id))
 
+/**
+ * 管理页专用的逻辑分组。数据库仍然保留每个商品一条规则，
+ * 这里只把执行结果完全相同的商品规则合并展示，避免修改时逐条操作。
+ */
+type KeywordGroup = Keyword & {
+  ruleIds: string[]
+  itemIds: string[]
+  itemTitles: string[]
+  isCommon: boolean
+}
+
+const groupKeywords = (rows: Keyword[]): KeywordGroup[] => {
+  const groups = new Map<string, KeywordGroup>()
+  rows.forEach((row) => {
+    const key = JSON.stringify([
+      row.account_id || '',
+      row.keyword,
+      row.reply || '',
+      row.type || 'text',
+      row.image_url || '',
+      row.location_name || '',
+      row.location_longitude || '',
+      row.location_latitude || '',
+      row.location_title || '',
+      row.location_subtitle || '',
+      Boolean(row.semantic_enabled),
+      row.item_id ? 'item' : 'common',
+    ])
+    const existing = groups.get(key)
+    if (existing) {
+      if (row.item_id && !existing.itemIds.includes(row.item_id)) {
+        existing.itemIds.push(row.item_id)
+        if (row.item_title) existing.itemTitles.push(row.item_title)
+      }
+      if (row.id && !existing.ruleIds.includes(row.id)) existing.ruleIds.push(row.id)
+      return
+    }
+    groups.set(key, {
+      ...row,
+      ruleIds: row.id ? [row.id] : [],
+      itemIds: row.item_id ? [row.item_id] : [],
+      itemTitles: row.item_title ? [row.item_title] : [],
+      isCommon: !row.item_id,
+    })
+  })
+  return Array.from(groups.values())
+}
+
 export function Keywords() {
   const { addToast } = useUIStore()
   const { isAuthenticated, token, _hasHydrated } = useAuthStore()
@@ -51,7 +99,7 @@ export function Keywords() {
   const [selectedAccount, setSelectedAccount] = useState('')
   const [formAccountId, setFormAccountId] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [editingKeyword, setEditingKeyword] = useState<Keyword | null>(null)
+  const [editingKeyword, setEditingKeyword] = useState<KeywordGroup | null>(null)
   const [keywordText, setKeywordText] = useState('')
   const [replyText, setReplyText] = useState('')
   const [replyType, setReplyType] = useState<'text' | 'external_contact'>('text')
@@ -63,7 +111,6 @@ export function Keywords() {
     location_title: DEFAULT_LOCATION_TITLE,
     location_subtitle: '',
   })
-  const [itemIdText, setItemIdText] = useState('')  // 绑定的商品ID（编辑时使用）
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([])  // 多选商品ID（新增时使用）
   const [itemSearchText, setItemSearchText] = useState('')  // 商品搜索
   const [saving, setSaving] = useState(false)
@@ -89,7 +136,7 @@ export function Keywords() {
   const [selectedKeywordIds, setSelectedKeywordIds] = useState<Set<string>>(new Set())
 
   // 删除确认弹窗状态
-  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; keyword: Keyword | null }>({ open: false, keyword: null })
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; keyword: KeywordGroup | null }>({ open: false, keyword: null })
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -97,9 +144,10 @@ export function Keywords() {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
 
-  // 计算分页数据
-  const totalPages = Math.ceil(keywords.length / pageSize)
-  const paginatedKeywords = keywords.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  // 计算分页数据：分页的是逻辑分组，而不是底层商品规则
+  const groupedKeywords = groupKeywords(keywords)
+  const totalPages = Math.ceil(groupedKeywords.length / pageSize)
+  const paginatedKeywords = groupedKeywords.slice((currentPage - 1) * pageSize, currentPage * pageSize)
   const getKeywordAccountId = (keyword: Keyword) => keyword.account_id || selectedAccount
 
   // 分页切换
@@ -203,7 +251,6 @@ export function Keywords() {
     setReplyType('text')
     setSemanticEnabled(false)
     setLocation({ location_name: '', location_longitude: '', location_latitude: '', location_title: DEFAULT_LOCATION_TITLE, location_subtitle: '' })
-    setItemIdText('')
     setSelectedItemIds([])
     setItemSearchText('')
     setIsModalOpen(true)
@@ -218,7 +265,7 @@ export function Keywords() {
     setReplyType('external_contact')
   }
 
-  const openEditModal = (keyword: Keyword) => {
+  const openEditModal = (keyword: KeywordGroup) => {
     // 图片关键词不支持编辑
     if (keyword.type === 'image') {
       addToast({ type: 'warning', message: '图片关键词不支持编辑，请删除后重新添加' })
@@ -244,7 +291,8 @@ export function Keywords() {
       location_title: keyword.location_title || DEFAULT_LOCATION_TITLE,
       location_subtitle: keyword.location_subtitle || '',
     })
-    setItemIdText(keyword.item_id || '')
+    setSelectedItemIds(keyword.isCommon ? [] : [...keyword.itemIds])
+    setItemSearchText('')
     setIsModalOpen(true)
   }
 
@@ -302,27 +350,27 @@ export function Keywords() {
           addToast({ type: 'error', message: '未找到原所属账号，无法保存' })
           return
         }
-        // 编辑模式：多行关键词仍保存为同一条规则，方便后续在一个入口维护同回复内容。
-        const result = await updateKeyword(
-          sourceAccountId,
-          editingKeyword.keyword,
-          editingKeyword.item_id || '',
-          {
-            account_id: submitAccountId,
-            keyword: normalizedKeywordText,
-            reply: replyText.trim(),
-            item_id: itemIdText.trim(),
-            type: replyType,
-            semantic_enabled: semanticEnabled,
-            ...location,
-            location_title: location.location_title.trim() || DEFAULT_LOCATION_TITLE,
-          }
-        )
+        // 分组编辑：一次替换该账号的文本规则，后端在一个事务中提交，
+        // 底层仍保留每个商品一条规则，删除/新增商品也能保持原有运行时结构。
+        const targetItemIds = selectedItemIds.length > 0 ? selectedItemIds : ['']
+        const groupRuleIds = new Set(editingKeyword.ruleIds)
+        const accountKeywords = keywords.filter((row) => getKeywordAccountId(row) === sourceAccountId)
+        const remainingKeywords = accountKeywords.filter((row) => !row.id || !groupRuleIds.has(row.id))
+        const replacementKeywords = targetItemIds.map((itemId) => ({
+          keyword: normalizedKeywordText,
+          reply: replyText.trim(),
+          item_id: itemId,
+          type: replyType,
+          semantic_enabled: semanticEnabled,
+          ...location,
+          location_title: location.location_title.trim() || DEFAULT_LOCATION_TITLE,
+        } as Keyword))
+        const result = await saveKeywords(sourceAccountId, [...remainingKeywords, ...replacementKeywords])
         if (result.success === false) {
           addToast({ type: 'error', message: result.message || '更新失败' })
           return
         }
-        addToast({ type: 'success', message: '关键词已更新' })
+        addToast({ type: 'success', message: `关键词组已更新，当前绑定 ${targetItemIds[0] ? targetItemIds.length : 0} 个商品` })
       } else {
         // 新增模式：每个商品只新增一条规则，避免多账号场景下同回复关键词被拆散后难以查找。
         const itemIdsToAdd = selectedItemIds.length > 0 ? selectedItemIds : ['']
@@ -424,7 +472,7 @@ export function Keywords() {
     }
   }
 
-  const handleDelete = async (keyword: Keyword) => {
+  const handleDelete = async (keyword: KeywordGroup) => {
     setDeleting(true)
     try {
       const accountId = getKeywordAccountId(keyword)
@@ -432,12 +480,17 @@ export function Keywords() {
         addToast({ type: 'error', message: '未找到所属账号，无法删除' })
         return
       }
-      const result = await deleteKeyword(accountId, keyword.keyword, keyword.item_id || '', keyword.id)
-      if (result.success === false) {
-        addToast({ type: 'error', message: result.message || '删除失败' })
-        return
+      const rows = keyword.ruleIds.length
+        ? keywords.filter((row) => row.id && keyword.ruleIds.includes(row.id))
+        : [keyword]
+      for (const row of rows) {
+        const result = await deleteKeyword(accountId, row.keyword, row.item_id || '', row.id)
+        if (result.success === false) {
+          addToast({ type: 'error', message: result.message || '删除失败' })
+          return
+        }
       }
-      addToast({ type: 'success', message: '删除成功' })
+      addToast({ type: 'success', message: rows.length > 1 ? `已删除整组规则（${rows.length} 条）` : '删除成功' })
       setDeleteConfirm({ open: false, keyword: null })
       await loadKeywords()
     } catch {
@@ -448,9 +501,12 @@ export function Keywords() {
   }
 
   // 批量选择相关
-  const getKeywordUniqueId = (keyword: Keyword) => keyword.id || `${getKeywordAccountId(keyword)}_${keyword.keyword}_${keyword.item_id || ''}`
+  const getKeywordUniqueId = (keyword: KeywordGroup) =>
+    keyword.ruleIds.length > 0
+      ? keyword.ruleIds.join(',')
+      : `${getKeywordAccountId(keyword)}_${keyword.keyword}_${keyword.item_id || ''}`
 
-  const toggleKeywordSelect = (keyword: Keyword) => {
+  const toggleKeywordSelect = (keyword: KeywordGroup) => {
     const id = getKeywordUniqueId(keyword)
     setSelectedKeywordIds((prev) => {
       const next = new Set(prev)
@@ -464,10 +520,10 @@ export function Keywords() {
   }
 
   const toggleSelectAllKeywords = () => {
-    if (selectedKeywordIds.size === keywords.length) {
+    if (selectedKeywordIds.size === groupedKeywords.length) {
       setSelectedKeywordIds(new Set())
     } else {
-      setSelectedKeywordIds(new Set(keywords.map(getKeywordUniqueId)))
+      setSelectedKeywordIds(new Set(groupedKeywords.map(getKeywordUniqueId)))
     }
   }
 
@@ -482,7 +538,7 @@ export function Keywords() {
     let failCount = 0
     let firstErrorMessage = ''
 
-    for (const keyword of keywords) {
+    for (const keyword of groupedKeywords) {
       if (selectedKeywordIds.has(getKeywordUniqueId(keyword))) {
         try {
           const accountId = getKeywordAccountId(keyword)
@@ -493,15 +549,20 @@ export function Keywords() {
             }
             continue
           }
-          const result = await deleteKeyword(accountId, keyword.keyword, keyword.item_id || '', keyword.id)
-          if (result.success === false) {
-            failCount++
-            if (!firstErrorMessage) {
-              firstErrorMessage = result.message || '删除失败'
+          const rows = keyword.ruleIds.length
+            ? keywords.filter((row) => row.id && keyword.ruleIds.includes(row.id))
+            : [keyword]
+          for (const row of rows) {
+            const result = await deleteKeyword(accountId, row.keyword, row.item_id || '', row.id)
+            if (result.success === false) {
+              failCount++
+              if (!firstErrorMessage) {
+                firstErrorMessage = result.message || '删除失败'
+              }
+              break
             }
-            continue
+            successCount++
           }
-          successCount++
         } catch {
           failCount++
           if (!firstErrorMessage) {
@@ -746,7 +807,7 @@ export function Keywords() {
             <MessageSquare className="w-4 h-4" />
             关键词列表
           </h2>
-          <span className="badge-primary">{keywords.length} 个关键词</span>
+          <span className="badge-primary">{groupedKeywords.length} 组规则（{keywords.length} 条商品规则）</span>
         </div>
         <div className="flex-1 overflow-auto">
           <table className="table-ios">
@@ -756,9 +817,9 @@ export function Keywords() {
                   <button
                     onClick={toggleSelectAllKeywords}
                     className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                    title={selectedKeywordIds.size === keywords.length ? '取消全选' : '全选'}
+                    title={selectedKeywordIds.size === groupedKeywords.length ? '取消全选' : '全选'}
                   >
-                    {selectedKeywordIds.size === keywords.length && keywords.length > 0 ? (
+                    {selectedKeywordIds.size === groupedKeywords.length && groupedKeywords.length > 0 ? (
                       <CheckSquare className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                     ) : (
                       <Square className="w-4 h-4 text-gray-400" />
@@ -827,10 +888,17 @@ export function Keywords() {
                       </div>
                     </td>
                     <td>
-                      {keyword.item_id ? (
-                        <span className="text-xs text-slate-500 dark:text-slate-400">{keyword.item_id}</span>
-                      ) : (
+                      {keyword.isCommon ? (
                         <span className="text-xs text-gray-400">通用</span>
+                      ) : (
+                        <div className="max-w-[260px]" title={keyword.itemIds.join(', ')}>
+                          <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                            已绑定 {keyword.itemIds.length} 个商品
+                          </span>
+                          <p className="truncate text-xs text-slate-400 dark:text-slate-500">
+                            {keyword.itemIds.slice(0, 3).join(', ')}{keyword.itemIds.length > 3 ? ' …' : ''}
+                          </p>
+                        </div>
                       )}
                     </td>
                     <td className="max-w-[300px]">
@@ -953,7 +1021,7 @@ export function Keywords() {
                       onChange={(value) => {
                         if (value !== formAccountId) {
                           setFormAccountId(value)
-                          setItemIdText('')
+                          setSelectedItemIds([])
                         }
                       }}
                       options={accounts.map((account) => ({
@@ -986,29 +1054,7 @@ export function Keywords() {
                 </div>
                 <div>
                   <label className="input-label">商品ID（可选）</label>
-                  {editingKeyword ? (
-                    // 编辑模式：单选
-                    <>
-                      <select
-                        value={itemIdText}
-                        onChange={(e) => setItemIdText(e.target.value)}
-                        className="input-ios"
-                      >
-                        <option value="">通用关键词（所有商品）</option>
-                        {items.map((item) => (
-                          <option key={item.item_id} value={item.item_id}>
-                            {item.item_id} - {item.title}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                        绑定商品ID后，此关键词仅在该商品对话中生效
-                      </p>
-                    </>
-                  ) : (
-                    // 新增模式：多选
-                    <>
-                      <div className="relative mb-2">
+                  <div className="relative mb-2">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                         <input
                           type="text"
@@ -1088,11 +1134,9 @@ export function Keywords() {
                       </div>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                         {selectedItemIds.length === 0
-                          ? '未选择商品，将创建通用关键词'
-                          : `已选择 ${selectedItemIds.length} 个商品，将创建 ${selectedItemIds.length} 条关键词`}
+                          ? (editingKeyword ? '未选择商品，将保存为通用关键词' : '未选择商品，将创建通用关键词')
+                          : `${editingKeyword ? '将保存' : '将创建'} ${selectedItemIds.length} 条商品关键词`}
                       </p>
-                    </>
-                  )}
                 </div>
                 <div>
                   <label className="input-label">回复类型</label>
