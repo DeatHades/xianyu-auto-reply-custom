@@ -2,11 +2,64 @@
 from __future__ import annotations
 
 import json
+import re
+from urllib.parse import urlparse
 from typing import Any
 
 
 RESPONSE_FIELD_EMPTY_MESSAGE = "响应字段取值失败为空"
 _MISSING = object()
+_LOCAL_BAIDU_SHARE_HOST = "192.168.11.131"
+_LOCAL_BAIDU_SHARE_PATH = "/api/v1/shares"
+
+
+def is_local_baidu_share_api(url: str | None) -> bool:
+    """仅识别本机百度分享接口，避免模板能力影响其他 API 卡券。"""
+    if not isinstance(url, str) or not url.strip():
+        return False
+    try:
+        parsed = urlparse(url.strip())
+    except ValueError:
+        return False
+    return (
+        parsed.hostname == _LOCAL_BAIDU_SHARE_HOST
+        and parsed.path.rstrip("/") == _LOCAL_BAIDU_SHARE_PATH
+    )
+
+
+def render_local_baidu_share_template(
+    response_text: str,
+    template: str | None,
+) -> str:
+    """渲染本地百度分享接口的发货模板，如 ``{{data.link}}``。
+
+    该函数只负责解析响应和模板，不决定是否允许使用；调用方必须先用
+    :func:`is_local_baidu_share_api` 校验 URL。模板字段沿用响应字段路径语法。
+    """
+    if not isinstance(template, str) or not template.strip():
+        return RESPONSE_FIELD_EMPTY_MESSAGE
+    try:
+        response_data = json.loads(response_text)
+    except Exception:
+        return RESPONSE_FIELD_EMPTY_MESSAGE
+
+    missing = False
+
+    def replace(match: re.Match[str]) -> str:
+        nonlocal missing
+        field_path = match.group(1).strip()
+        value = get_response_field_value(response_data, field_path)
+        if value is _MISSING or value is None:
+            missing = True
+            return ""
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False)
+        return str(value)
+
+    rendered = re.sub(r"\{\{\s*([^{}]+?)\s*\}\}", replace, template).strip()
+    if missing or not rendered:
+        return RESPONSE_FIELD_EMPTY_MESSAGE
+    return rendered
 
 
 def extract_card_api_response_content(response_text: str, response_field: str | None = None) -> str:

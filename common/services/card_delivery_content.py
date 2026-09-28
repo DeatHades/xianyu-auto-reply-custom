@@ -29,7 +29,11 @@ from common.services.delivery_utils import (
     recursive_replace_params,
     replace_order_context_variables,
 )
-from common.utils.response_field import extract_card_api_response_content
+from common.utils.response_field import (
+    extract_card_api_response_content,
+    is_local_baidu_share_api,
+    render_local_baidu_share_template,
+)
 
 # API 取卡最大重试次数
 _API_MAX_RETRIES = 4
@@ -129,6 +133,8 @@ async def get_api_card_content(
         headers = api_config.get('headers', '{}')
         params = api_config.get('params', '{}')
         response_field = api_config.get('response_field') or api_config.get('responseField')
+        local_baidu_template_enabled = api_config.get('local_baidu_template_enabled') is True
+        local_baidu_template = api_config.get('local_baidu_template')
 
         if isinstance(headers, str):
             headers = json.loads(headers)
@@ -160,7 +166,13 @@ async def get_api_card_content(
                 return None
 
         if status_code == 200:
-            content = extract_card_api_response_content(response_text, response_field)
+            if local_baidu_template_enabled and is_local_baidu_share_api(url):
+                content = render_local_baidu_share_template(
+                    response_text, local_baidu_template
+                )
+            else:
+                # 未开启本地百度模板时，完全沿用原有 API 卡券取值方式。
+                content = extract_card_api_response_content(response_text, response_field)
             logger.info(f"API调用成功，返回内容长度: {len(content)}")
             return content
 

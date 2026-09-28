@@ -110,6 +110,14 @@ export function CardDetailModal({ card, onClose, zIndex = 60 }: CardDetailModalP
               {card.api_config.response_field && (
                 <DetailRow label="响应取值字段" value={card.api_config.response_field} />
               )}
+              {card.api_config.local_baidu_template_enabled && (
+                <>
+                  <DetailRow label="本地百度模板" value="已启用（仅 192.168.11.131/api/v1/shares）" />
+                  {card.api_config.local_baidu_template && (
+                    <DetailRow label="百度发货模板" value={card.api_config.local_baidu_template} multiline />
+                  )}
+                </>
+              )}
               {card.api_config.fallback_content && (
                 <DetailRow label="接口失败默认文字" value={card.api_config.fallback_content} multiline />
               )}

@@ -30,6 +30,10 @@ export interface CardData {
     headers?: string
     params?: string
     response_field?: string
+    /** 仅对本地 192.168.11.131 百度分享接口启用模板提取 */
+    local_baidu_template_enabled?: boolean
+    /** 本地百度分享发货模板，如：老板，任天堂下载：{{data.link}} 密码{{data.pwd}} */
+    local_baidu_template?: string
     /** API 调用失败时发送的默认文字 */
     fallback_content?: string
   }

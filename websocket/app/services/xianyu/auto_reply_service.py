@@ -138,6 +138,9 @@ class AutoReplyService:
         self._processed_messages: Dict[str, float] = {}  # (chat_id + send_message) -> 最后回复时间
         self._processed_messages_lock = asyncio.Lock()
         self._processed_messages_max_size = 10000
+        # “只回复一次”的最终占用锁。消息去重按内容区分，不能阻止同一买家
+        # 连发不同消息时并发进入默认回复，因此在写入回复记录前还需要一次原子占用。
+        self._default_reply_once_claim_lock = asyncio.Lock()
         self._reply_trace_var: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
             f"auto_reply_trace_{cookie_id}",
             default=None,
@@ -792,28 +795,19 @@ class AutoReplyService:
                         )
                         if not external_result or not external_result.get("success"):
                             await self._unmark_chat_processed(chat_id, send_message)
-                        if (
-                            external_result
-                            and external_result.get("success")
-                            and reply.get("reply_once")
-                            and chat_id
-                        ):
-                            try:
-                                async with async_session_maker() as record_session:
-                                    await self._record_user_replied(
-                                        record_session,
-                                        self.cookie_id,
-                                        chat_id,
-                                        reply.get("settings_item_id"),
+                            if reply.get("reply_once") and chat_id:
+                                try:
+                                    async with async_session_maker() as record_session:
+                                        await self._clear_user_replied(
+                                            record_session,
+                                            self.cookie_id,
+                                            chat_id,
+                                            reply.get("settings_item_id"),
+                                        )
+                                except Exception as record_exc:  # noqa: BLE001
+                                    logger.warning(
+                                        f"【{self.cookie_id}】清理失败的站外联系方式默认回复记录失败: {record_exc}"
                                     )
-                                logger.info(
-                                    f"【{self.cookie_id}】记录站外联系方式默认回复: "
-                                    f"chat_id={chat_id}, item_id={reply.get('settings_item_id')}"
-                                )
-                            except Exception as record_exc:  # noqa: BLE001
-                                logger.warning(
-                                    f"【{self.cookie_id}】记录站外联系方式 reply_once 失败: {record_exc}"
-                                )
                     elif reply.startswith("__IMAGE_SEND__"):
                         # 解析图片发送指令：去掉前缀后格式为 |类型标识|image_url
                         content = reply.replace("__IMAGE_SEND__", "")
@@ -1931,12 +1925,62 @@ class AutoReplyService:
             reply_trace["reply_mode"] = "external_contact"
             reply_trace["reply_segments"] = [{"mode": "external_contact", "content": title}]
             reply_trace.setdefault("context_snapshot", {})["external_contact_remote_url"] = remote_url
+        if settings.get("reply_once", False) and chat_id:
+            claimed = await self._claim_default_reply_once(
+                session, chat_id, settings_item_id
+            )
+            if not claimed:
+                logger.info(
+                    f"【{self.cookie_id}】默认回复名额已被其他消息占用，跳过站外联系方式: "
+                    f"chat_id={chat_id}, item_id={settings_item_id}"
+                )
+                if reply_trace is not None:
+                    reply_trace["process_status"] = "skipped"
+                    reply_trace["decision_reason"] = "default_reply_once"
+                return None
         return {
             "_reply_mode": "external_contact",
             "message": message,
             "reply_once": bool(settings.get("reply_once", False)),
             "settings_item_id": settings_item_id,
         }
+
+    async def _claim_default_reply_once(
+        self,
+        session: AsyncSession,
+        chat_id: str,
+        item_id: Optional[str],
+    ) -> bool:
+        """原子占用一次性默认回复名额，避免并发消息重复发送。
+
+        先用 Redis 锁覆盖多实例场景，再用本地锁兜底 Redis 短暂不可用的情况。
+        调用方必须在确认实际有可发送内容后调用；返回 False 时应放弃本次发送。
+        """
+        if not chat_id:
+            return True
+
+        lock_name = f"default_reply_once:{self.cookie_id}:{chat_id}:{item_id or 'account'}"
+        async with self._default_reply_once_claim_lock:
+            try:
+                async with distributed_lock(lock_name, expire=30, blocking=True, timeout=5) as lock:
+                    if not lock.is_locked:
+                        logger.warning(
+                            f"【{self.cookie_id}】默认回复一次性占用锁超时，跳过本次回复: "
+                            f"chat_id={chat_id}, item_id={item_id}"
+                        )
+                        return False
+                    if await self._check_user_replied(session, self.cookie_id, chat_id, item_id):
+                        return False
+                    await self._record_user_replied(session, self.cookie_id, chat_id, item_id)
+                    return True
+            except Exception as lock_exc:  # Redis 不可用时仍由本地锁保护单进程并发
+                logger.warning(
+                    f"【{self.cookie_id}】默认回复一次性分布式锁异常，使用本地锁保护: {lock_exc}"
+                )
+                if await self._check_user_replied(session, self.cookie_id, chat_id, item_id):
+                    return False
+                await self._record_user_replied(session, self.cookie_id, chat_id, item_id)
+                return True
 
     async def get_default_reply(
         self,
@@ -2140,7 +2184,18 @@ class AutoReplyService:
                             reply_trace.setdefault("context_snapshot", {})["default_reply_format_error"] = str(e)
 
                 if settings.get("reply_once", False) and chat_id:
-                    await self._record_user_replied(session, self.cookie_id, chat_id, settings_item_id)
+                    claimed = await self._claim_default_reply_once(
+                        session, chat_id, settings_item_id
+                    )
+                    if not claimed:
+                        logger.info(
+                            f"【{self.cookie_id}】默认回复名额已被其他消息占用，跳过图片回复: "
+                            f"chat_id={chat_id}, item_id={settings_item_id}"
+                        )
+                        if reply_trace is not None:
+                            reply_trace["process_status"] = "skipped"
+                            reply_trace["decision_reason"] = "default_reply_once"
+                        return None
                     logger.info(f"【{self.cookie_id}】记录默认回复: chat_id={chat_id}, item_id={settings_item_id}")
 
                 if reply_trace is not None:
@@ -2172,7 +2227,18 @@ class AutoReplyService:
                 )
 
                 if settings.get("reply_once", False) and chat_id:
-                    await self._record_user_replied(session, self.cookie_id, chat_id, settings_item_id)
+                    claimed = await self._claim_default_reply_once(
+                        session, chat_id, settings_item_id
+                    )
+                    if not claimed:
+                        logger.info(
+                            f"【{self.cookie_id}】默认回复名额已被其他消息占用，跳过文本回复: "
+                            f"chat_id={chat_id}, item_id={settings_item_id}"
+                        )
+                        if reply_trace is not None:
+                            reply_trace["process_status"] = "skipped"
+                            reply_trace["decision_reason"] = "default_reply_once"
+                        return None
                     logger.info(f"【{self.cookie_id}】记录默认回复: chat_id={chat_id}, item_id={settings_item_id}")
 
                 logger.info(f"【{self.cookie_id}】使用默认回复: {formatted}")
@@ -2359,6 +2425,27 @@ class AutoReplyService:
         """
         record = DefaultReplyRecord(account_id=account_id, item_id=item_id, user_id=user_id)
         session.add(record)
+        await session.commit()
+
+    async def _clear_user_replied(
+        self,
+        session: AsyncSession,
+        account_id: str,
+        user_id: str,
+        item_id: Optional[str] = None,
+    ) -> None:
+        """发送站外联系方式失败时释放已占用的一次性回复名额。"""
+        from sqlalchemy import delete
+
+        stmt = delete(DefaultReplyRecord).where(
+            DefaultReplyRecord.account_id == account_id,
+            DefaultReplyRecord.user_id == user_id,
+        )
+        if item_id:
+            stmt = stmt.where(DefaultReplyRecord.item_id == item_id)
+        else:
+            stmt = stmt.where(DefaultReplyRecord.item_id.is_(None))
+        await session.execute(stmt)
         await session.commit()
 
     async def get_ai_reply(

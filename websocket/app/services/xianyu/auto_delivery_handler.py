@@ -28,7 +28,11 @@ from common.db.compat import db_manager
 from common.services.card_delivery_content import get_api_fallback_content
 from common.services.order_service import OrderDetailService
 from common.utils.fish_nick_utils import get_buyer_fish_nick
-from common.utils.response_field import extract_card_api_response_content
+from common.utils.response_field import (
+    extract_card_api_response_content,
+    is_local_baidu_share_api,
+    render_local_baidu_share_template,
+)
 from common.utils.xianyu_utils import trans_cookies
 
 
@@ -3131,6 +3135,8 @@ class AutoDeliveryHandler:
             headers = api_config.get('headers', '{}')
             params = api_config.get('params', '{}')
             response_field = api_config.get('response_field') or api_config.get('responseField')
+            local_baidu_template_enabled = api_config.get('local_baidu_template_enabled') is True
+            local_baidu_template = api_config.get('local_baidu_template')
 
             # 解析headers和params
             if isinstance(headers, str):
@@ -3171,7 +3177,14 @@ class AutoDeliveryHandler:
                     return None
 
             if status_code == 200:
-                content = extract_card_api_response_content(response_text, response_field)
+                if local_baidu_template_enabled and is_local_baidu_share_api(url):
+                    content = render_local_baidu_share_template(
+                        response_text, local_baidu_template
+                    )
+                    logger.info("已使用本地百度分享模板生成卡券内容")
+                else:
+                    # 保持所有现有 API 卡券的原有取值逻辑不变。
+                    content = extract_card_api_response_content(response_text, response_field)
                 logger.info(f"API调用成功，返回内容长度: {len(content)}")
                 return content
             else:

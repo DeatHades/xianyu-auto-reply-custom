@@ -12,7 +12,11 @@ from loguru import logger
 
 from common.models.card import Card
 from common.services.card_matcher import CardMatcher
-from common.utils.response_field import extract_card_api_response_content
+from common.utils.response_field import (
+    extract_card_api_response_content,
+    is_local_baidu_share_api,
+    render_local_baidu_share_template,
+)
 
 
 from common.utils.time_utils import safe_isoformat
@@ -1109,6 +1113,13 @@ class CardService:
                 
                 response.raise_for_status()
                 response_field = config.get("response_field") or config.get("responseField")
+                if (
+                    config.get("local_baidu_template_enabled") is True
+                    and is_local_baidu_share_api(url)
+                ):
+                    return render_local_baidu_share_template(
+                        response.text, config.get("local_baidu_template")
+                    )
                 return extract_card_api_response_content(response.text, response_field)
                     
         except Exception as e:

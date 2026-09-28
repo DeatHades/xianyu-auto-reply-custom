@@ -50,6 +50,8 @@ interface CardFormData {
   apiHeaders: string
   apiParams: string
   apiResponseField: string
+  localBaiduTemplateEnabled: boolean
+  localBaiduTemplate: string
   apiFallbackContent: string
   textContent: string
   dataContent: string
@@ -96,6 +98,8 @@ export function cardToFormData(card: CardData): CardFormData {
     apiHeaders: card.api_config?.headers || '',
     apiParams: card.api_config?.params || '',
     apiResponseField: card.api_config?.response_field || '',
+    localBaiduTemplateEnabled: card.api_config?.local_baidu_template_enabled || false,
+    localBaiduTemplate: card.api_config?.local_baidu_template || '',
     apiFallbackContent: card.api_config?.fallback_content || '',
     textContent: card.text_content || '',
     dataContent: card.data_content || '',
@@ -132,6 +136,8 @@ export const emptyCardFormData: CardFormData = {
   apiHeaders: '',
   apiParams: '',
   apiResponseField: '',
+  localBaiduTemplateEnabled: false,
+  localBaiduTemplate: '',
   apiFallbackContent: '',
   textContent: '',
   dataContent: '',
@@ -308,6 +314,8 @@ export function CardFormModal({ cardId, initialData, onClose, onSaved }: CardFor
           headers: formData.apiHeaders.trim() || undefined,
           params: formData.apiParams.trim() || undefined,
           response_field: formData.apiResponseField.trim() || undefined,
+          local_baidu_template_enabled: formData.localBaiduTemplateEnabled,
+          local_baidu_template: formData.localBaiduTemplate.trim() || undefined,
           fallback_content: formData.apiFallbackContent.trim() || undefined,
         }
       } else if (formData.type === 'text') {
@@ -479,6 +487,36 @@ export function CardFormModal({ cardId, initialData, onClose, onSaved }: CardFor
                       注意：接口返回纯文本时若填写本字段，会因无法解析而取值失败，请务必留空。
                     </p>
                   </div>
+                </div>
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.localBaiduTemplateEnabled}
+                      onChange={(e) => updateField('localBaiduTemplateEnabled', e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded border-gray-300"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-gray-900 dark:text-white">启用本地百度分享模板</span>
+                      <span className="block text-xs text-gray-600 dark:text-gray-300 mt-0.5">
+                        仅当 API 地址是 192.168.11.131 的 /api/v1/shares 时生效，不影响其他 API 卡券。
+                      </span>
+                    </span>
+                  </label>
+                  {formData.localBaiduTemplateEnabled && (
+                    <div className="mt-3">
+                      <label className="input-label">百度分享发货模板</label>
+                      <textarea
+                        value={formData.localBaiduTemplate}
+                        onChange={(e) => updateField('localBaiduTemplate', e.target.value)}
+                        className="input-ios h-20 font-mono text-sm"
+                        placeholder="老板，任天堂下载：{{data.link}} 密码{{data.pwd}}"
+                      />
+                      <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                        可用变量：{'{{data.link}}'}、{'{{data.pwd}}'}；模板中缺少返回字段时会按取值失败处理。
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="input-label">接口失败默认发货文字（选填）</label>
