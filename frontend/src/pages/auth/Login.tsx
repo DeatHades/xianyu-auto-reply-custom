@@ -5,7 +5,7 @@ import { MessageSquare, User, Lock, Mail, KeyRound, Eye, EyeOff } from 'lucide-r
 import { AuthNavbar } from '@/components/common/AuthNavbar'
 import { SafeHtml } from '@/components/common/SafeHtml'
 import { getDefaultAuthFooterAdSettings, getDefaultLoginBrandingSettings } from '@/api/settings'
-import { login, verifyToken, getRegistrationStatus, getLoginInfoStatus, generateCaptcha, verifyCaptcha, sendVerificationCode, getLoginCaptchaStatus, getLoginBrandingSettings, getAuthFooterAdSettings } from '@/api/auth'
+import { login, loginWithPasskey, registerPasskey, verifyToken, getRegistrationStatus, getLoginInfoStatus, generateCaptcha, verifyCaptcha, sendVerificationCode, getLoginCaptchaStatus, getLoginBrandingSettings, getAuthFooterAdSettings } from '@/api/auth'
 import { useAuthStore } from '@/store/authStore'
 import { useUIStore } from '@/store/uiStore'
 import { cn } from '@/utils/cn'
@@ -257,6 +257,17 @@ export function Login() {
           account_limit: result.account_limit,
         })
         addToast({ type: 'success', message: '登录成功' })
+        // 首次正常登录后可在当前设备注册 Passkey；取消不会影响正常登录。
+        const promptKey = `passkey_prompted_${result.user_id}`
+        if (window.isSecureContext && 'PublicKeyCredential' in window && !localStorage.getItem(promptKey)) {
+          localStorage.setItem(promptKey, '1')
+          try {
+            await registerPasskey()
+            addToast({ type: 'success', message: '本设备通行密钥已注册，下次可直接用 Face ID 登录' })
+          } catch {
+            // 用户取消或当前浏览器不支持时，不阻断原有登录。
+          }
+        }
         navigate('/dashboard')
       } else {
         addToast({ type: 'error', message: result.message || '登录失败' })
@@ -267,6 +278,26 @@ export function Login() {
       addToast({ type: 'error', message: '登录失败，请检查网络连接' })
       // 登录失败，重置滑动验证
       resetGeetest()
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handlePasskeyLogin = async () => {
+    setLoading(true)
+    try {
+      const result = await loginWithPasskey()
+      if (result.success && result.token && result.refresh_token) {
+        setAuth(result.token, result.refresh_token, {
+          user_id: result.user_id!, username: result.username!, is_admin: result.is_admin!, account_limit: result.account_limit,
+        })
+        addToast({ type: 'success', message: '通行密钥登录成功' })
+        navigate('/dashboard')
+      } else {
+        addToast({ type: 'error', message: result.message || '通行密钥登录失败' })
+      }
+    } catch (error) {
+      addToast({ type: 'error', message: error instanceof Error ? error.message : '通行密钥登录失败' })
     } finally {
       setLoading(false)
     }
@@ -549,6 +580,17 @@ export function Login() {
                 {loading ? <ButtonLoading /> : '登 录'}
               </button>
             </form>
+
+            {window.isSecureContext && 'PublicKeyCredential' in window && (
+              <button
+                type="button"
+                onClick={handlePasskeyLogin}
+                disabled={loading}
+                className="w-full mt-3 rounded-md border border-slate-300 dark:border-slate-600 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+              >
+                使用 Face ID / Touch ID 通行密钥登录
+              </button>
+            )}
 
             {/* Forgot password + Register links */}
             <div className="flex items-center justify-between mt-6 text-sm">

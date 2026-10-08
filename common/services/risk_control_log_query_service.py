@@ -9,12 +9,21 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 from dataclasses import dataclass
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, select, update
 
 from common.db.session import async_session_maker
 from common.models.risk_control_log import XYRiskControlLog
+from common.utils.time_utils import get_beijing_now_naive
+
+
+# 滑块验证属于人工/浏览器流程，正常也不应长期占用账号。
+# 超过该时间视为孤儿任务，下一次刷新时自动收尾，避免账号永久被挡住。
+PROCESSING_RISK_CONTROL_MAX_AGE = timedelta(minutes=20)
+STALE_RISK_CONTROL_RESULT = "风控验证超过20分钟未完成，系统已自动结束本次任务"
+STALE_RISK_CONTROL_ERROR = "风控任务超时，已释放账号验证状态"
 
 
 _ACCOUNT_RISK_CONTROL_LOCKS: dict[str, asyncio.Lock] = {}
@@ -76,6 +85,24 @@ async def check_account_processing_risk_control_log(
     for attempt in range(1, attempts + 1):
         try:
             async with async_session_maker() as session:
+                # 只清理当前账号的过期 processing 记录，不影响其它账号。
+                # 这样即使 WebSocket 没有重启，也能从一次新的刷新请求中自愈。
+                stale_cutoff = get_beijing_now_naive() - PROCESSING_RISK_CONTROL_MAX_AGE
+                await session.execute(
+                    update(XYRiskControlLog)
+                    .where(
+                        XYRiskControlLog.account_identifier == clean_identifier,
+                        XYRiskControlLog.processing_status == "processing",
+                        XYRiskControlLog.created_at < stale_cutoff,
+                    )
+                    .values(
+                        processing_status="failed",
+                        processing_result=STALE_RISK_CONTROL_RESULT,
+                        error_message=STALE_RISK_CONTROL_ERROR,
+                        updated_at=get_beijing_now_naive(),
+                    )
+                )
+                await session.commit()
                 has_processing = bool(
                     (
                         await session.execute(

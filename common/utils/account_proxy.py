@@ -86,7 +86,12 @@ def build_aiohttp_proxy_options(proxy_url: str | None) -> tuple[object | None, s
 
 
 def build_playwright_proxy_config(proxy_url: str | None) -> dict[str, str] | None:
-    """把代理 URL 转成 Playwright 的 ``proxy`` 参数。"""
+    """把代理 URL 转成 Playwright 的 ``proxy`` 参数。
+
+    Playwright Chromium 不支持带用户名密码的 SOCKS5 代理。提前拒绝这类
+    配置，避免浏览器启动后才报错，并防止调用方误以为已经通过代理续期。
+    HTTP/HTTPS 认证代理仍然正常支持。
+    """
     if not proxy_url:
         return None
 
@@ -95,6 +100,11 @@ def build_playwright_proxy_config(proxy_url: str | None) -> dict[str, str] | Non
     parsed = urlparse(proxy_url)
     if parsed.scheme not in _PROXY_TYPES or not parsed.hostname or not parsed.port:
         raise AccountProxyConfigurationError("代理地址格式无效")
+    if parsed.scheme == "socks5" and (parsed.username or parsed.password):
+        raise AccountProxyConfigurationError(
+            "Playwright不支持带用户名密码的SOCKS5代理，请改用HTTP/HTTPS代理，"
+            "或填写不带认证的SOCKS5代理"
+        )
 
     config: dict[str, str] = {
         "server": f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"

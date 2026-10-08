@@ -7,14 +7,22 @@
 3. 用户注册
 4. 用户登出
 """
+import json
+import os
+from datetime import timedelta
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
 from app.api.routes.captcha import check_email_code
 from app.core.security import decode_token, get_password_hash
 from common.models.user import User, UserRole, UserStatus
+from common.models.passkey import PasskeyChallenge, PasskeyCredential
+from common.utils.time_utils import get_beijing_now_naive
 from common.schemas.auth import LoginRequest, LoginResponse, VerifyResponse
 from common.schemas.common import ApiResponse
 from common.schemas.user import UserCreate, UserPublic
@@ -29,6 +37,190 @@ class ResetPasswordRequest(BaseModel):
     email: str
     verification_code: str
     new_password: str
+
+
+class PasskeyVerifyRequest(BaseModel):
+    challenge_id: str
+    credential: dict
+    device_name: str | None = None
+
+
+def _passkey_config(request: Request) -> tuple[str, str]:
+    """获取 RP 配置；生产环境建议显式设置 PASSKEY_RP_ID/ORIGIN。"""
+    host = request.url.hostname or ""
+    origin = f"{request.url.scheme}://{request.url.netloc}"
+    rp_id = os.getenv("PASSKEY_RP_ID", host).strip()
+    configured_origin = os.getenv("PASSKEY_ORIGIN", origin).strip()
+    if not rp_id or not configured_origin:
+        raise HTTPException(status_code=503, detail="Passkey未配置域名")
+    if configured_origin.startswith("http://") and host not in {"localhost", "127.0.0.1", "[::1]"}:
+        raise HTTPException(status_code=400, detail="Passkey登录必须使用HTTPS域名")
+    return rp_id, configured_origin
+
+
+def _webauthn_imports():
+    try:
+        from webauthn import (
+            generate_authentication_options,
+            generate_registration_options,
+            verify_authentication_response,
+            verify_registration_response,
+        )
+        from webauthn.helpers import base64url_to_bytes, bytes_to_base64url, options_to_json
+        from webauthn.helpers.structs import (
+            AuthenticatorSelectionCriteria,
+            PublicKeyCredentialDescriptor,
+            ResidentKeyRequirement,
+            UserVerificationRequirement,
+        )
+        return locals()
+    except ImportError as exc:
+        raise HTTPException(status_code=503, detail="Passkey组件未安装，请重新构建后台") from exc
+
+
+@router.post("/passkey/register/options")
+async def passkey_register_options(
+    request: Request,
+    current_user: User = Depends(deps.get_current_active_user),
+    session: AsyncSession = Depends(deps.get_db_session),
+) -> dict:
+    """为已登录用户生成一次性 Passkey 注册挑战。"""
+    rp_id, _ = _passkey_config(request)
+    lib = _webauthn_imports()
+    existing = (await session.execute(select(PasskeyCredential).where(PasskeyCredential.user_id == current_user.id))).scalars().all()
+    options = lib["generate_registration_options"](
+        rp_id=rp_id,
+        rp_name="闲鱼管理系统",
+        user_id=str(current_user.id).encode("utf-8"),
+        user_name=current_user.username,
+        user_display_name=current_user.username,
+        exclude_credentials=[
+            lib["PublicKeyCredentialDescriptor"](id=lib["base64url_to_bytes"](item.credential_id))
+            for item in existing
+        ],
+        authenticator_selection=lib["AuthenticatorSelectionCriteria"](
+            resident_key=lib["ResidentKeyRequirement"].REQUIRED,
+            user_verification=lib["UserVerificationRequirement"].REQUIRED,
+        ),
+    )
+    challenge_id = uuid4().hex
+    session.add(PasskeyChallenge(
+        id=challenge_id,
+        user_id=current_user.id,
+        challenge=lib["bytes_to_base64url"](options.challenge),
+        purpose="register",
+        expires_at=get_beijing_now_naive() + timedelta(minutes=5),
+    ))
+    await session.commit()
+    return {"success": True, "challenge_id": challenge_id, "options": json.loads(lib["options_to_json"](options))}
+
+
+@router.post("/passkey/register/verify")
+async def passkey_register_verify(
+    payload: PasskeyVerifyRequest,
+    request: Request,
+    current_user: User = Depends(deps.get_current_active_user),
+    session: AsyncSession = Depends(deps.get_db_session),
+) -> dict:
+    rp_id, origin = _passkey_config(request)
+    lib = _webauthn_imports()
+    challenge = (await session.execute(select(PasskeyChallenge).where(
+        PasskeyChallenge.id == payload.challenge_id,
+        PasskeyChallenge.user_id == current_user.id,
+        PasskeyChallenge.purpose == "register",
+    ))).scalar_one_or_none()
+    if not challenge or challenge.expires_at < get_beijing_now_naive():
+        raise HTTPException(status_code=400, detail="Passkey注册挑战已过期，请重试")
+    try:
+        verified = lib["verify_registration_response"](
+            credential=payload.credential,
+            expected_challenge=lib["base64url_to_bytes"](challenge.challenge),
+            expected_rp_id=rp_id,
+            expected_origin=origin,
+            require_user_verification=True,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Passkey注册验证失败: {exc}") from exc
+    credential_id = lib["bytes_to_base64url"](verified.credential_id)
+    existing = (await session.execute(select(PasskeyCredential).where(PasskeyCredential.credential_id == credential_id))).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail="该通行密钥已经注册")
+    session.add(PasskeyCredential(
+        user_id=current_user.id,
+        credential_id=credential_id,
+        public_key=lib["bytes_to_base64url"](verified.credential_public_key),
+        sign_count=verified.sign_count,
+        device_name=(payload.device_name or "Apple通行密钥")[:120],
+    ))
+    await session.delete(challenge)
+    await session.commit()
+    return {"success": True, "message": "通行密钥注册成功"}
+
+
+@router.post("/passkey/login/options")
+async def passkey_login_options(request: Request, session: AsyncSession = Depends(deps.get_db_session)) -> dict:
+    """生成 Passkey 登录挑战；不返回用户列表，避免账号枚举。"""
+    rp_id, _ = _passkey_config(request)
+    lib = _webauthn_imports()
+    options = lib["generate_authentication_options"](
+        rp_id=rp_id,
+        user_verification=lib["UserVerificationRequirement"].REQUIRED,
+    )
+    challenge_id = uuid4().hex
+    session.add(PasskeyChallenge(
+        id=challenge_id,
+        challenge=lib["bytes_to_base64url"](options.challenge),
+        purpose="login",
+        expires_at=get_beijing_now_naive() + timedelta(minutes=5),
+    ))
+    await session.commit()
+    return {"success": True, "challenge_id": challenge_id, "options": json.loads(lib["options_to_json"](options))}
+
+
+@router.post("/passkey/login/verify", response_model=LoginResponse)
+async def passkey_login_verify(
+    payload: PasskeyVerifyRequest,
+    request: Request,
+    session: AsyncSession = Depends(deps.get_db_session),
+    auth_service: AuthService = Depends(deps.get_auth_service),
+) -> LoginResponse:
+    rp_id, origin = _passkey_config(request)
+    lib = _webauthn_imports()
+    challenge = (await session.execute(select(PasskeyChallenge).where(
+        PasskeyChallenge.id == payload.challenge_id,
+        PasskeyChallenge.purpose == "login",
+    ))).scalar_one_or_none()
+    if not challenge or challenge.expires_at < get_beijing_now_naive():
+        return LoginResponse(success=False, message="Passkey登录挑战已过期，请重试")
+    credential_id = payload.credential.get("id")
+    record = (await session.execute(select(PasskeyCredential).where(PasskeyCredential.credential_id == credential_id))).scalar_one_or_none()
+    if not record:
+        return LoginResponse(success=False, message="未找到该通行密钥，请先用密码登录并注册")
+    try:
+        verified = lib["verify_authentication_response"](
+            credential=payload.credential,
+            expected_challenge=lib["base64url_to_bytes"](challenge.challenge),
+            expected_rp_id=rp_id,
+            expected_origin=origin,
+            credential_public_key=lib["base64url_to_bytes"](record.public_key),
+            credential_current_sign_count=record.sign_count,
+            require_user_verification=True,
+        )
+    except Exception as exc:
+        return LoginResponse(success=False, message=f"Passkey验证失败: {exc}")
+    user = await session.get(User, record.user_id)
+    if not user or user.status != UserStatus.ACTIVE:
+        return LoginResponse(success=False, message="账号不存在或已被禁用")
+    record.sign_count = verified.new_sign_count
+    record.last_used_at = get_beijing_now_naive()
+    await session.delete(challenge)
+    await session.commit()
+    await auth_service.mark_login(user)
+    return LoginResponse(
+        success=True, message="登录成功", token=auth_service.create_access_token(user),
+        refresh_token=auth_service.create_refresh_token(user), user_id=user.id,
+        username=user.username, is_admin=user.role == UserRole.ADMIN, account_limit=user.account_limit,
+    )
 
 
 @router.post("/login", response_model=LoginResponse)

@@ -5,6 +5,7 @@ SQLAlchemy模型导出
 """
 
 from common.models.user import User, UserRole, UserStatus
+from common.models.passkey import PasskeyCredential, PasskeyChallenge
 from common.models.xy_account import XYAccount
 from common.models.xy_catalog_item import XYCatalogItem
 from common.models.xy_keyword_rule import XYKeywordRule
@@ -77,6 +78,8 @@ __all__ = [
     "User",
     "UserRole",
     "UserStatus",
+    "PasskeyCredential",
+    "PasskeyChallenge",
     "XYAccount",
     "XYCatalogItem",
     "XYKeywordRule",

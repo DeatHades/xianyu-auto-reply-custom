@@ -532,6 +532,34 @@ class DatabaseInitializer:
                 UNIQUE KEY uk_user_key (user_id, `key`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户设置表';
         """,
+
+        # Passkey/WebAuthn 凭证与一次性挑战。挑战落库，保证多副本/重启后仍能安全完成登录。
+        "xy_passkey_credentials": """
+            CREATE TABLE IF NOT EXISTS xy_passkey_credentials (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                user_id BIGINT NOT NULL,
+                credential_id VARCHAR(512) NOT NULL,
+                public_key TEXT NOT NULL,
+                sign_count INT NOT NULL DEFAULT 0,
+                device_name VARCHAR(120) DEFAULT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_used_at DATETIME DEFAULT NULL,
+                UNIQUE KEY uq_passkey_credential_id (credential_id),
+                INDEX idx_passkey_user_id (user_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Passkey凭证';
+        """,
+        "xy_passkey_challenges": """
+            CREATE TABLE IF NOT EXISTS xy_passkey_challenges (
+                id VARCHAR(64) PRIMARY KEY,
+                user_id BIGINT DEFAULT NULL,
+                challenge VARCHAR(512) NOT NULL,
+                purpose VARCHAR(20) NOT NULL,
+                expires_at DATETIME NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_passkey_challenge_user (user_id),
+                INDEX idx_passkey_challenge_expire (expires_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Passkey一次性挑战';
+        """,
         
         # 3. 系统设置表
         "xy_system_settings": """

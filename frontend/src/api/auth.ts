@@ -41,6 +41,67 @@ export const login = (data: LoginRequest): Promise<LoginResponse> => {
   return post(`${AUTH_PREFIX}/login`, data)
 }
 
+const base64urlToBuffer = (value: string): ArrayBuffer => {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4)
+  const binary = atob(normalized)
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0)).buffer
+}
+
+const bufferToBase64url = (value: ArrayBuffer | ArrayBufferView): string => {
+  const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+  let binary = ''
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte) })
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+const serializeCredential = (credential: PublicKeyCredential) => {
+  const response = credential.response as AuthenticatorAssertionResponse | AuthenticatorAttestationResponse
+  const result: Record<string, unknown> = {
+    id: credential.id,
+    rawId: bufferToBase64url(credential.rawId),
+    type: credential.type,
+    response: {},
+  }
+  if ('clientDataJSON' in response) {
+    const responseData: Record<string, string> = {
+      clientDataJSON: bufferToBase64url(response.clientDataJSON),
+    }
+    if ('authenticatorData' in response) responseData.authenticatorData = bufferToBase64url(response.authenticatorData)
+    if ('signature' in response) responseData.signature = bufferToBase64url(response.signature)
+    if ('userHandle' in response && response.userHandle) responseData.userHandle = bufferToBase64url(response.userHandle)
+    if ('attestationObject' in response) responseData.attestationObject = bufferToBase64url(response.attestationObject)
+    result.response = responseData
+  }
+  return result
+}
+
+const ensurePasskeySupport = () => {
+  if (!window.isSecureContext || !navigator.credentials) throw new Error('当前地址不是安全连接，无法使用通行密钥')
+}
+
+export const registerPasskey = async (deviceName = 'Apple通行密钥'): Promise<{ success: boolean; message?: string }> => {
+  ensurePasskeySupport()
+  const challenge = await post<{ challenge_id: string; options: PublicKeyCredentialCreationOptions }>(`${AUTH_PREFIX}/passkey/register/options`)
+  const options = challenge.options as any
+  options.challenge = base64urlToBuffer(options.challenge)
+  options.user.id = base64urlToBuffer(options.user.id as unknown as string)
+  if (options.excludeCredentials) options.excludeCredentials = options.excludeCredentials.map((item: any) => ({ ...item, id: base64urlToBuffer(item.id as string) }))
+  const credential = await navigator.credentials.create({ publicKey: options }) as PublicKeyCredential | null
+  if (!credential) throw new Error('未创建通行密钥')
+  return post(`${AUTH_PREFIX}/passkey/register/verify`, { challenge_id: challenge.challenge_id, credential: serializeCredential(credential), device_name: deviceName })
+}
+
+export const loginWithPasskey = async (): Promise<LoginResponse> => {
+  ensurePasskeySupport()
+  const challenge = await post<{ challenge_id: string; options: PublicKeyCredentialRequestOptions }>(`${AUTH_PREFIX}/passkey/login/options`)
+  const options = challenge.options as any
+  options.challenge = base64urlToBuffer(options.challenge)
+  if (options.allowCredentials) options.allowCredentials = options.allowCredentials.map((item: any) => ({ ...item, id: base64urlToBuffer(item.id as string) }))
+  const credential = await navigator.credentials.get({ publicKey: options }) as PublicKeyCredential | null
+  if (!credential) return { success: false, message: '未选择通行密钥' }
+  return post(`${AUTH_PREFIX}/passkey/login/verify`, { challenge_id: challenge.challenge_id, credential: serializeCredential(credential) })
+}
+
 // 验证 Token
 export const verifyToken = (): Promise<{ authenticated: boolean; user_id?: number; username?: string; is_admin?: boolean; account_limit?: number | null }> => {
   return get(`${AUTH_PREFIX}/verify`)

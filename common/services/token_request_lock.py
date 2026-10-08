@@ -18,9 +18,11 @@ from loguru import logger
 from common.db.redis_client import DistributedLock
 
 
-TOKEN_REQUEST_LOCK_EXPIRE_SECONDS = 600
-TOKEN_REQUEST_LOCK_EXTEND_INTERVAL_SECONDS = 120
-TOKEN_REQUEST_LOCK_WAIT_TIMEOUT_SECONDS = 900.0
+TOKEN_REQUEST_LOCK_EXPIRE_SECONDS = 360
+TOKEN_REQUEST_LOCK_EXTEND_INTERVAL_SECONDS = 90
+# 同账号 Token 流程最多等待 5 分钟；超时后由上层重新检查缓存/风控状态，
+# 避免单个卡住的滑块流程把账号拖成 15 分钟“假在线”。
+TOKEN_REQUEST_LOCK_WAIT_TIMEOUT_SECONDS = 300.0
 
 
 class TokenRequestLockError(RuntimeError):

@@ -95,6 +95,9 @@ services:
       - CARD_DOCK_BASE_URL=${CARD_DOCK_BASE_URL:-http://backend.zhinianboke.com}
       - EXTERNAL_API_KEY=${EXTERNAL_API_KEY:-zhinian_bk}
       - FRONTEND_PUBLIC_URL=${FRONTEND_PUBLIC_URL:-}
+      # Passkey/WebAuthn：生产环境填写前端HTTPS域名，例如 app.example.com / https://app.example.com
+      - PASSKEY_RP_ID=${PASSKEY_RP_ID:-xy.idrom.top}
+      - PASSKEY_ORIGIN=${PASSKEY_ORIGIN:-https://xy.idrom.top}
       - AUTO_START_CRAWL_JOBS=${AUTO_START_CRAWL_JOBS:-true}
       - REMOTE_OFFICIAL_BASE_URL=${REMOTE_OFFICIAL_BASE_URL:-https://xy.zhinianboke.com}
       - ENABLE_REMOTE_ADS=${ENABLE_REMOTE_ADS:-false}
