@@ -28,6 +28,9 @@ from common.services.captcha.slider_mode import refresh_slider_mode_from_databas
 from common.services.risk_control_log_cleanup_service import (
     fail_processing_risk_control_logs_on_restart,
 )
+from common.services.risk_control_log_query_service import (
+    cleanup_stale_processing_risk_control_logs,
+)
 from common.utils.logging_utils import setup_logging
 from common.utils.network_utils import resolve_listen_host
 
@@ -94,6 +97,24 @@ async def lifespan(app: FastAPI):
     else:
         logger.info(cleanup_result.message)
 
+    async def _risk_control_watchdog() -> None:
+        """持续释放异常退出后遗留的账号风控占用。"""
+        while True:
+            try:
+                cleaned = await cleanup_stale_processing_risk_control_logs()
+                if cleaned:
+                    logger.warning(
+                        f"风控任务看门狗已释放 {cleaned} 条超时任务"
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # 看门狗失败不能影响认证、WebSocket 或账号任务运行。
+                logger.error(f"风控任务看门狗执行失败: {type(exc).__name__}: {exc}")
+            await asyncio.sleep(60)
+
+    risk_control_watchdog_task = asyncio.create_task(_risk_control_watchdog())
+
     await refresh_slider_mode_from_database()
     
     # 从数据库加载日志保留天数配置
@@ -128,6 +149,11 @@ async def lifespan(app: FastAPI):
         logger.error(f"CookieManager停止失败: {e}")
 
     log_retention_sync_task.cancel()
+    risk_control_watchdog_task.cancel()
+    try:
+        await risk_control_watchdog_task
+    except asyncio.CancelledError:
+        pass
     try:
         await log_retention_sync_task
     except asyncio.CancelledError:

@@ -12,7 +12,7 @@ import asyncio
 from datetime import timedelta
 from dataclasses import dataclass
 
-from sqlalchemy import exists, select, update
+from sqlalchemy import exists, func, select, update
 
 from common.db.session import async_session_maker
 from common.models.risk_control_log import XYRiskControlLog
@@ -93,7 +93,13 @@ async def check_account_processing_risk_control_log(
                     .where(
                         XYRiskControlLog.account_identifier == clean_identifier,
                         XYRiskControlLog.processing_status == "processing",
-                        XYRiskControlLog.created_at < stale_cutoff,
+                        # updated_at is the authoritative heartbeat for a task.
+                        # A task may be created early and legitimately continue;
+                        # only a task with no update for the timeout is orphaned.
+                        func.coalesce(
+                            XYRiskControlLog.updated_at,
+                            XYRiskControlLog.created_at,
+                        ) < stale_cutoff,
                     )
                     .values(
                         processing_status="failed",
@@ -135,3 +141,43 @@ async def check_account_processing_risk_control_log(
         True,
         f"查询处理中风控日志失败，已重试{attempts}次：{last_error}",
     )
+
+
+async def cleanup_stale_processing_risk_control_logs(
+    *,
+    max_attempts: int = 3,
+    retry_delay_seconds: float = 0.5,
+) -> int:
+    """结束所有长时间没有更新的处理中风控任务。
+
+    这是一个账号隔离的后台兜底清理：只更新超时的 ``processing`` 行，
+    不触碰成功、失败、取消或其它账号的活动记录。
+    """
+    stale_cutoff = get_beijing_now_naive() - PROCESSING_RISK_CONTROL_MAX_AGE
+    attempts = max(1, int(max_attempts))
+    for attempt in range(1, attempts + 1):
+        try:
+            async with async_session_maker() as session:
+                result = await session.execute(
+                    update(XYRiskControlLog)
+                    .where(
+                        XYRiskControlLog.processing_status == "processing",
+                        func.coalesce(
+                            XYRiskControlLog.updated_at,
+                            XYRiskControlLog.created_at,
+                        ) < stale_cutoff,
+                    )
+                    .values(
+                        processing_status="failed",
+                        processing_result=STALE_RISK_CONTROL_RESULT,
+                        error_message=STALE_RISK_CONTROL_ERROR,
+                        updated_at=get_beijing_now_naive(),
+                    )
+                )
+                await session.commit()
+                return int(result.rowcount or 0)
+        except Exception as exc:
+            if attempt >= attempts:
+                raise
+            await asyncio.sleep(max(0.0, retry_delay_seconds))
+    return 0
