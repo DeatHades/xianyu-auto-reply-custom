@@ -9,7 +9,7 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 # 配置国内镜像源
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
     sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list 2>/dev/null || true
-RUN pip config set global.index-url https://pypi.org/simple
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/
 
 WORKDIR /app
 
